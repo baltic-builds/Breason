@@ -12,10 +12,11 @@
     "lint": "echo 'prompts package: no lint step'"
   },
   "dependencies": {
-    "@breason/types": "*"
+    "@breason/types": "*",
+    "next": "15.5.14"
   },
   "devDependencies": {
-    "vitest": "^1.6.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.2"
   }
 }

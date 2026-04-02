@@ -12,12 +12,13 @@
     "lint": "echo 'shared package: no lint step'"
   },
   "dependencies": {
-    "@breason/types": "*",
     "@breason/prompts": "*",
+    "@breason/types": "*",
+    "next": "15.5.14",
     "server-only": "^0.0.1"
   },
   "devDependencies": {
-    "vitest": "^1.6.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.2"
   }
 }
