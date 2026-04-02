@@ -1,76 +1,26 @@
-# Breason Monorepo
+# Breason
 
-Premium Grok × Bitrix24 styled workspace for **Evaluate**, **Resonance**, and **ReDuck** flows.
+**AI-powered marketing resonance & evaluation platform**
 
-## What is included
+**Resonance → Evaluate → ReDuck**
 
-- `apps/breason` — Evaluate (`/`) and Resonance (`/resonance`) — Next.js, port 3000
-- `apps/reduck` — ReDuck rewrite workspace — Vite + React + MUI + Vercel Serverless Functions, port 3001
-- `packages/shared` — prompts + AI fallback chain
-- `packages/types` — shared TS contracts
-- `packages/ui` — minimal shared primitives
+Оценивает маркетинговый текст на соответствие рынку, находит резонансные тренды и помогает быстро улучшать копирайтинг через ReDuck.
 
-## Local development
+## Технологии
 
-### Quick start (all apps in parallel)
+- **Monorepo**: Turborepo + Next.js 15 (App Router)
+- **AI**: Gemini 2.5 Flash (primary) + Groq + OpenRouter + OpenAI + Anthropic + fallback-цепочка
+- **Streaming**: SSE + EventSource
+- **Rate limiting**: middleware (20 req/min для AI)
+- **Промпты**: версионирование + A/B-тестирование (`packages/prompts`)
+- **ReDuck**: полностью встроен как `/reduck` внутри Breason (без отдельного приложения)
+
+## Быстрый старт
+
 ```bash
+git clone https://github.com/baltic-builds/Breason.git
+cd Breason
 npm install
-npm run dev
-```
-
-- Breason: http://localhost:3000
-- ReDuck frontend: http://localhost:3001
-- ReDuck API (vercel dev): http://localhost:3002
-
-### Individual apps
-```bash
-npm run dev:breason        # breason only
-npm run dev:reduck         # reduck vite + vercel dev together
-npm run dev:reduck:vite    # reduck frontend only
-npm run dev:reduck:api     # reduck vercel functions only
-```
-
-## Environment variables
-
-Copy `.env.example` → `.env.local` at root (breason reads it).
-Copy `apps/reduck/.env.local` and fill keys (vercel dev reads it from there).
-
-| Variable | Used by | Notes |
-|---|---|---|
-| `GEMINI_API_KEY` | breason + reduck | Free at aistudio.google.com |
-| `OPENROUTER_API_KEY` | breason + reduck | Optional fallback |
-| `GROQ_API_KEY` | breason + reduck | Optional fallback |
-| `TAVILY_API_KEY` | breason resonance | Optional |
-| `OPENAI_API_KEY` | reduck only | Optional |
-| `ANTHROPIC_API_KEY` | reduck only | Optional |
-| `NEXT_PUBLIC_REDUCK_URL` | breason → reduck link | Default: `http://localhost:3001` |
-
-## ReDuck review modes
-
-| Mode | Description |
-|---|---|
-| 🧲 Lead Magnet Review | Brazilian PT-BR editorial cleanup |
-| 📰 Articles Review | Journalistic style (Folha de S.Paulo) |
-| 🏆 Editorial Consultant & Scorer | 10-point scorecard + HBR-style critique |
-| 🌎 Localization PT-BR | Bitrix24 SaaS marketing localization |
-
-## ReDuck AI providers
-
-ReDuck auto-shows only providers with configured keys:
-Gemini · Groq · OpenRouter · OpenAI · Anthropic. Falls back to Demo mode if none set.
-
-## Build & checks
-
-```bash
-npm run type-check
-npm run build
-```
-
-## Extending ReDuck
-
-**Add a review mode:** append to `PROMPTS` in `apps/reduck/src/App.tsx`.
-
-**Add an AI provider:**
-1. `apps/reduck/api/models.ts` — add to `ALL_PROVIDERS` + `ENV_KEYS`
-2. `apps/reduck/api/process.ts` — add dispatch branch
-3. `apps/reduck/api/_providers.ts` — add API helper if format differs
+cp .env.example .env.local
+# заполни ключи в .env.local
+npm run dev:breason
