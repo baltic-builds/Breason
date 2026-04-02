@@ -24,3 +24,24 @@ npm install
 cp .env.example .env.local
 # заполни ключи в .env.local
 npm run dev:breason
+Открывай: http://localhost:3000
+Структура
+textapps/breason/          ← основное приложение (Evaluate + Resonance + ReDuck)
+packages/
+  ├── prompts/         ← все промпты с версиями и A/B
+  ├── shared/          ← ai.ts (retry + circuit breaker), logger, domain
+  ├── types/           ← общие типы (AIResponseMeta и т.д.)
+  └── ui/              ← общие компоненты
+Основные страницы
+
+/ — Evaluate (анализ текста)
+/resonance — Resonance (тренды + генерация)
+/reduck — ReDuck (refine с 5 провайдерами + streaming)
+
+Лицензия
+MIT
+text### 3. Упоминания `breason-app`
+
+**Найдено только в одном месте:**
+
+- Файл: `package.json` (строка `"dev:breason": "npm run dev --workspace=breason-app"`)
