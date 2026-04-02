@@ -43,13 +43,13 @@ export default function ReDuckPage() {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error('Failed to start processing');
+      if (!response.ok) throw new Error('Не удалось запустить обработку');
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let streamingText = '';
 
-      if (!reader) throw new Error('No response body');
+      if (!reader) throw new Error('Нет тела ответа');
 
       while (true) {
         const { value, done } = await reader.read();
@@ -63,12 +63,12 @@ export default function ReDuckPage() {
       setMeta({
         provider: selectedProvider as any,
         promptVersion,
-        latencyMs: Date.now(),
+        latencyMs: 0,
         requestedAt: new Date().toISOString(),
         costUsd: 0.0008,
       });
     } catch (err: any) {
-      setError(err.message || 'Произошла ошибка');
+      setError(err.message || 'Произошла ошибка при обработке');
     } finally {
       setIsLoading(false);
     }
@@ -77,8 +77,10 @@ export default function ReDuckPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-8">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-4xl font-bold mb-2">ReDuck</h1>
-        <p className="text-zinc-400 mb-10">Улучшай маркетинговый текст с помощью AI</p>
+        <div className="mb-10">
+          <h1 className="text-5xl font-bold tracking-tight">ReDuck</h1>
+          <p className="text-zinc-400 mt-2 text-xl">Улучшай маркетинговый копирайтинг с помощью AI</p>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
           {/* Панель ввода */}
@@ -88,69 +90,73 @@ export default function ReDuckPage() {
               <textarea
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Вставьте сюда маркетинговый текст, который нужно улучшить..."
-                className="w-full h-96 bg-zinc-900 border border-zinc-700 rounded-3xl p-6 text-lg focus:border-lime-500 focus:outline-none resize-y font-light"
+                placeholder="Вставьте сюда маркетинговый текст, который хотите улучшить..."
+                className="w-full h-[420px] bg-zinc-900 border border-zinc-700 rounded-3xl p-6 text-lg focus:border-lime-500 focus:outline-none resize-y font-light"
               />
             </div>
 
-            <div>
-              <label className="block text-sm text-zinc-400 mb-2">Провайдер AI</label>
-              <select
-                value={selectedProvider}
-                onChange={(e) => setSelectedProvider(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white"
-              >
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">Провайдер</label>
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => setSelectedProvider(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white"
+                >
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-sm text-zinc-400 mb-2">Версия промпта (A/B)</label>
-              <select
-                value={promptVersion}
-                onChange={(e) => setPromptVersion(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white"
-              >
-                {Object.keys(REDUCK_PROMPT_MAP).map((key) => (
-                  <option key={key} value={`reduck/${key}@1`}>
-                    reduck/{key}@1
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-2">Версия промпта</label>
+                <select
+                  value={promptVersion}
+                  onChange={(e) => setPromptVersion(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-4 text-white"
+                >
+                  {Object.keys(REDUCK_PROMPT_MAP).map((key) => (
+                    <option key={key} value={`reduck/${key}@1`}>
+                      reduck/{key}@1
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <button
               onClick={handleRefine}
               disabled={isLoading || !inputText.trim()}
-              className="w-full py-4 bg-lime-500 hover:bg-lime-600 disabled:bg-zinc-700 disabled:text-zinc-400 font-semibold rounded-2xl text-lg transition-colors"
+              className="w-full py-4 bg-lime-500 hover:bg-lime-600 disabled:bg-zinc-700 disabled:text-zinc-400 font-semibold rounded-2xl text-lg transition-all"
             >
-              {isLoading ? 'Обрабатываем с помощью AI...' : 'Улучшить текст с ReDuck'}
+              {isLoading ? 'ReDuck думает...' : 'Улучшить текст →'}
             </button>
           </div>
 
           {/* Панель результата */}
           <div className="lg:col-span-7">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-8 min-h-[520px]">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-semibold">Результат улучшения</h2>
+            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-8 min-h-[560px]">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-semibold">Результат ReDuck</h2>
                 {meta && (
-                  <div className="text-xs text-lime-400">
-                    {meta.provider} • {meta.promptVersion} • ~${meta.costUsd}
+                  <div className="text-xs px-3 py-1 bg-zinc-800 rounded-full text-lime-400">
+                    {meta.provider} • {meta.promptVersion}
                   </div>
                 )}
               </div>
 
-              {error && <p className="text-red-400 mb-4">{error}</p>}
+              {error && <p className="text-red-400 mb-6">{error}</p>}
 
               {result ? (
-                <div className="prose prose-invert max-w-none whitespace-pre-wrap text-[17px] leading-relaxed">
+                <div className="prose prose-invert max-w-none text-[17px] leading-relaxed whitespace-pre-wrap">
                   {result}
                 </div>
               ) : (
-                <div className="h-full flex items-center justify-center text-zinc-500 italic">
-                  Здесь появится улучшенная версия вашего текста
+                <div className="h-full flex items-center justify-center text-center">
+                  <p className="text-zinc-500 italic max-w-md">
+                    Нажмите кнопку «Улучшить текст», чтобы увидеть улучшенную версию
+                  </p>
                 </div>
               )}
             </div>
