@@ -1,10 +1,10 @@
 // packages/shared/src/index.ts
 import "server-only";
 
-// Главные утилиты
+// Экспортируем всё из .ts файлов (без .js расширения!)
 export * from "./ai";
 export * from "./logger";
 export * from "./domain";
 
-// Типы (если нужно)
+// Переэкспорт типов
 export type * from "@breason/types";
