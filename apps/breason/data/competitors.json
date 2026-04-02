@@ -1,0 +1,12 @@
+{
+  "_comment_how_to_add_competitor": "HOW TO ADD NEW COMPETITOR: 1) Pick existing market key. 2) Append object with name/url/angle. 3) Keep notes short and factual. 4) Prefer competitors with comparable ICP and channel mix. 5) Re-check messaging examples quarterly.",
+  "brazil": [
+    { "name": "RD Station", "url": "https://www.rdstation.com", "angle": "Automation with local GTM practicality." }
+  ],
+  "poland": [
+    { "name": "Livespace", "url": "https://www.livespace.io", "angle": "Pipeline discipline and sales process clarity." }
+  ],
+  "germany": [
+    { "name": "Pipedrive DE", "url": "https://www.pipedrive.com/de", "angle": "Structured CRM value with productivity proof." }
+  ]
+}

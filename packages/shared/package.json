@@ -1,0 +1,23 @@
+{
+  "name": "@breason/shared",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "build": "echo 'shared package: no build step'",
+    "lint": "echo 'shared package: no lint step'"
+  },
+  "dependencies": {
+    "@breason/types": "*",
+    "@breason/prompts": "*",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "_comment_how_to_add_country": "HOW TO ADD NEW COUNTRY: 1) Add a new market key with label/lang/summary. 2) Extend MarketKey in packages/types/src/index.ts. 3) Add static trends in packages/shared/src/index.ts for fallback. 4) Add any local competitors in competitors.json. 5) Add UI option in apps/breason routes. 6) Run turbo run type-check before commit.",
+  "brazil": {
+    "label": "Brazil",
+    "lang": "pt-BR",
+    "summary": "Relationship-first messaging with human warmth and clear business outcomes."
+  },
+  "poland": {
+    "label": "Poland",
+    "lang": "pl-PL",
+    "summary": "Pragmatic and skeptical market that values specificity and grounded claims."
+  },
+  "germany": {
+    "label": "Germany",
+    "lang": "de-DE",
+    "summary": "Trust and compliance centric communication with clear structure and reliability cues."
+  }
+}
