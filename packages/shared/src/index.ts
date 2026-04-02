@@ -1,7 +1,10 @@
-// server-only guard — Next.js will throw a build error if any client component
-// imports this package, preventing accidental API key leakage to the browser.
+// packages/shared/src/index.ts
 import "server-only";
 
-export * from "./ai.js";
-export * from "./logger.js";
-export * from "./domain.js";
+// Главные утилиты
+export * from "./ai";
+export * from "./logger";
+export * from "./domain";
+
+// Типы (если нужно)
+export type * from "@breason/types";
