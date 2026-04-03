@@ -1,4 +1,4 @@
-import flags from "../data/feature-flags.json";
+import flagsJson from "../data/feature-flags.json";
 import type { FeatureFlags } from "@breason/types";
 
-export const featureFlags = flags as FeatureFlags;
+export const featureFlags = flagsJson as unknown as FeatureFlags;
