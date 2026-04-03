@@ -1,0 +1,9 @@
+{
+  "buildCommand": "turbo run build --filter=breason-app",
+  "outputDirectory": "apps/breason/.next",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/$1" }
+  ]
+}
