@@ -14,7 +14,7 @@ import type {
 } from "@breason/types";
 import flagsJson from "@/data/feature-flags.json";
 
-const flags = flagsJson as FeatureFlags;
+const flags = flagsJson as unknown as FeatureFlags;
 
 type Step = "search" | "evaluate" | "improve";
 
