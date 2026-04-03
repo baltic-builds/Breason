@@ -1,4 +1,13 @@
-export type AIProvider = 'gemini' | 'groq' | 'openrouter' | 'openai' | 'anthropic';
+// ─── AI Providers ────────────────────────────────────────────────────────────
+
+export type AIProvider =
+  | 'gemini'
+  | 'gemini-2.5-flash'
+  | 'groq'
+  | 'openrouter'
+  | 'openai'
+  | 'anthropic'
+  | 'local';
 
 export interface AIResponseMeta {
   provider: AIProvider;
@@ -22,13 +31,15 @@ export interface ReDuckProcessRequest {
   promptVersion?: string;
 }
 
-// Market & other types
+// ─── Market ───────────────────────────────────────────────────────────────────
+
 export type MarketKey = string;
 export const isMarketKey = (key: string): key is MarketKey => {
   return ['br', 'mx', 'latam', 'global'].includes(key);
 };
 
-// Resonance
+// ─── Resonance ────────────────────────────────────────────────────────────────
+
 export type ResonanceTrend = {
   /** Название / ключевая фраза тренда */
   title: string;
@@ -49,3 +60,47 @@ export type ResonanceTrend = {
   /** Любые числовые или строковые метрики */
   metrics?: Record<string, number | string>;
 };
+
+export interface ResonanceTrendsResponse {
+  trends: ResonanceTrend[];
+  market: string;
+  generatedAt: string;
+}
+
+export interface ResonanceGenerateResponse {
+  headline: string;
+  body: string;
+  cta: string;
+  trend: ResonanceTrend;
+  market: string;
+  generatedAt: string;
+}
+
+// ─── Analyze ──────────────────────────────────────────────────────────────────
+
+export interface AnalyzeResult {
+  score: number;
+  verdict: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  suggestions?: string[];
+  market?: string;
+  language?: string;
+  raw?: string;
+}
+
+// ─── Logger ───────────────────────────────────────────────────────────────────
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface LogEntry {
+  level: LogLevel;
+  message: string;
+  timestamp: string;
+  context?: Record<string, unknown>;
+  error?: {
+    message: string;
+    stack?: string;
+    code?: string;
+  };
+}
