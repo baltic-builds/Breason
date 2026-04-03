@@ -38,8 +38,12 @@ export type ResonanceTrend = {
   language?: string;
   /** Источник данных: tavily, google и т.д. */
   source?: string;
-  /** Релевантность запросу/аудитории (0..1) — используется в тестах как resonanceScore */
+  /** Релевантность / сила резонанса (0..100) */
   resonanceScore?: number;
+  /** Основное рыночное противоречие/напряжение */
+  marketTension?: string;
+  /** Ключевой инсайт по тренду */
+  insight?: string;
   /** Краткое пояснение / контекст */
   description?: string;
   /** Любые числовые или строковые метрики */
