@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@breason/ui":      ["packages/ui/src/index.tsx"],
+      "@breason/shared":  ["packages/shared/src/index.ts"],
+      "@breason/types":   ["packages/types/src/index.ts"],
+      "@breason/prompts": ["packages/prompts/src/index.ts"]
+    }
+  }
+}
