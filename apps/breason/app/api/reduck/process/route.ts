@@ -2,50 +2,66 @@ import { NextRequest } from 'next/server';
 import { callAiWithFallback } from '@breason/shared';
 import { ReDuckProcessRequest } from '@breason/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
-  const { text, providerId, modelId, promptVersion } = (await req.json()) as ReDuckProcessRequest;
+  try {
+    const body = await req.json() as ReDuckProcessRequest;
+    const { text, providerId, modelId, promptVersion = 'reduck/lead-magnet@1' } = body;
 
-  if (!text?.trim()) {
-    return new Response('{"error": "Текст обязателен"}', { status: 400 });
-  }
+    if (!text?.trim()) {
+      return Response.json({ error: 'Текст обязателен' }, { status: 400 });
+    }
 
-  const requestId = `req_${Date.now()}`;
+    const requestId = `reduck_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        const prompt = `
-Ты — мировой эксперт по маркетинговому копирайтингу.
-Улучши следующий текст для целевой аудитории.
-Сделай его более убедительным, эмоциональным и продающим.
+    // Используем промпт из packages/prompts (по версии)
+    const aiResult = await callAiWithFallback({
+      prompt: text,
+      promptVersion,
+      providerId,
+      modelId,
+      requestId,
+      temperature: 0.75,
+      maxTokens: 2000,
+    });
 
-Текст:
-${text}
-`;
+    const fullText = aiResult.text || aiResult.content || '';
 
-        const result = await callAiWithFallback(prompt, promptVersion || 'reduck/lead-magnet@1', requestId);
+    // Реальный SSE streaming
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Разбиваем на небольшие чанки для красивого потока
+          const chunks = fullText.match(/.{1,120}/g) || [fullText];
 
-        // Стримим результат по кусочкам (имитируем поток)
-        const words = result.text.split(' ');
-        for (let i = 0; i < words.length; i++) {
-          controller.enqueue(new TextEncoder().encode(words[i] + ' '));
-          await new Promise((r) => setTimeout(r, 8)); // плавный поток
+          for (const chunk of chunks) {
+            controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
+            // Небольшая задержка для плавности (можно убрать)
+            await new Promise((r) => setTimeout(r, 8));
+          }
+
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        } catch (e) {
+          controller.error(e);
         }
+      },
+    });
 
-        controller.close();
-      } catch (err) {
-        console.error(err);
-        controller.enqueue(new TextEncoder().encode('Ошибка при обработке запроса.'));
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  });
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+      },
+    });
+  } catch (error) {
+    console.error('ReDuck API error:', error);
+    return Response.json(
+      { error: 'Произошла ошибка при обработке запроса' },
+      { status: 500 }
+    );
+  }
 }
