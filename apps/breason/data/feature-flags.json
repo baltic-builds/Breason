@@ -1,5 +1,5 @@
 {
-  "enableResonance": true,
-  "enableReDuckIntegration": true,
-  "enableRateLimiting": true
+  "resonanceEnabled": true,
+  "reDuckEnabled": true,
+  "analyzeEnabled": true
 }
