@@ -1,4 +1,5 @@
 import type {
+  AIResponseMeta,
   AnalyzeResult,
   MarketKey,
   ResonanceGenerateResponse,
@@ -10,7 +11,7 @@ import {
   resonanceTrendsPrompt,
   resonanceGeneratePrompt,
 } from "@breason/prompts";
-import { callAiWithFallback, softJson } from "./ai.js";
+import { callAiWithFallback, softJson } from "./ai";
 
 export const marketLabel: Record<MarketKey, string> = {
   brazil: "Brazil",
@@ -20,7 +21,8 @@ export const marketLabel: Record<MarketKey, string> = {
 
 const NOW = () => new Date().toISOString();
 
-// ── Analyze ───────────────────────────────────────────────────────────────────
+type AnalyzePayload = Omit<AnalyzeResult, keyof AIResponseMeta>;
+type GeneratePayload = Omit<ResonanceGenerateResponse, keyof AIResponseMeta>;
 
 export async function analyzeMarketing(
   text: string,
@@ -34,12 +36,17 @@ export async function analyzeMarketing(
     requestId
   );
 
-  const parsed = softJson<Omit<AnalyzeResult, keyof import("@breason/types").AIResponseMeta>>(raw);
-  const meta = { provider, promptVersion: "analyze@1", tokensUsed, latencyMs: Date.now() - t0, requestedAt: NOW() };
+  const parsed = softJson<AnalyzePayload>(raw);
+  const meta: AIResponseMeta = {
+    provider,
+    promptVersion: "analyze@1",
+    tokensUsed,
+    latencyMs: Date.now() - t0,
+    requestedAt: NOW(),
+  };
 
   if (parsed) return { ...parsed, ...meta };
 
-  // Local deterministic fallback
   const len = text.trim().length;
   const score = Math.max(35, Math.min(92, Math.floor(len / 6) + 40));
   return {
@@ -55,8 +62,6 @@ export async function analyzeMarketing(
   };
 }
 
-// ── Resonance trends ──────────────────────────────────────────────────────────
-
 export async function resonanceTrends(
   market: MarketKey,
   requestId?: string
@@ -69,7 +74,13 @@ export async function resonanceTrends(
   );
 
   const parsed = softJson<{ trends: ResonanceTrend[] }>(raw);
-  const meta = { provider, promptVersion: "resonance-trends@1", tokensUsed, latencyMs: Date.now() - t0, requestedAt: NOW() };
+  const meta: AIResponseMeta = {
+    provider,
+    promptVersion: "resonance-trends@1",
+    tokensUsed,
+    latencyMs: Date.now() - t0,
+    requestedAt: NOW(),
+  };
 
   if (parsed?.trends?.length) return { ...meta, trends: parsed.trends.slice(0, 5) };
 
@@ -91,8 +102,6 @@ export async function resonanceTrends(
   return { ...meta, provider: "local", trends: localTrends[market] };
 }
 
-// ── Resonance generate ────────────────────────────────────────────────────────
-
 export async function resonanceGenerate(
   market: MarketKey,
   trend: ResonanceTrend,
@@ -105,8 +114,14 @@ export async function resonanceGenerate(
     requestId
   );
 
-  const parsed = softJson<Omit<ResonanceGenerateResponse, keyof import("@breason/types").AIResponseMeta>>(raw);
-  const meta = { provider, promptVersion: "resonance-generate@1", tokensUsed, latencyMs: Date.now() - t0, requestedAt: NOW() };
+  const parsed = softJson<GeneratePayload>(raw);
+  const meta: AIResponseMeta = {
+    provider,
+    promptVersion: "resonance-generate@1",
+    tokensUsed,
+    latencyMs: Date.now() - t0,
+    requestedAt: NOW(),
+  };
 
   if (parsed?.headline && parsed?.body && parsed?.cta) return { ...parsed, ...meta };
 
