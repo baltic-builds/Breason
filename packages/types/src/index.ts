@@ -1,4 +1,15 @@
-// ─── AI Providers ────────────────────────────────────────────────────────────
+// ─── Shared Meta ─────────────────────────────────────────────────────────────
+
+export interface AIMeta {
+  provider: AIProvider;
+  promptVersion: string;
+  tokensUsed?: number;
+  latencyMs: number;
+  requestedAt: string;
+  costUsd?: number;
+}
+
+// ─── AI Providers ─────────────────────────────────────────────────────────────
 
 export type AIProvider =
   | 'gemini'
@@ -9,13 +20,12 @@ export type AIProvider =
   | 'anthropic'
   | 'local';
 
-export interface AIResponseMeta {
+export interface AIResponseMeta extends AIMeta {
   provider: AIProvider;
   promptVersion: string;
   tokensUsed?: number;
   latencyMs: number;
   requestedAt: string;
-  /** Approximate cost in USD for this request */
   costUsd?: number;
 }
 
@@ -38,57 +48,6 @@ export const isMarketKey = (key: string): key is MarketKey => {
   return ['br', 'mx', 'latam', 'global'].includes(key);
 };
 
-// ─── Resonance ────────────────────────────────────────────────────────────────
-
-export type ResonanceTrend = {
-  /** Название / ключевая фраза тренда */
-  title: string;
-  /** Рынок / страна, например "BR", "MX" */
-  market?: string;
-  /** Язык, например "pt-BR", "es" */
-  language?: string;
-  /** Источник данных: tavily, google и т.д. */
-  source?: string;
-  /** Релевантность / сила резонанса (0..100) */
-  resonanceScore?: number;
-  /** Основное рыночное противоречие/напряжение */
-  marketTension?: string;
-  /** Ключевой инсайт по тренду */
-  insight?: string;
-  /** Краткое пояснение / контекст */
-  description?: string;
-  /** Любые числовые или строковые метрики */
-  metrics?: Record<string, number | string>;
-};
-
-export interface ResonanceTrendsResponse {
-  trends: ResonanceTrend[];
-  market: string;
-  generatedAt: string;
-}
-
-export interface ResonanceGenerateResponse {
-  headline: string;
-  body: string;
-  cta: string;
-  trend: ResonanceTrend;
-  market: string;
-  generatedAt: string;
-}
-
-// ─── Analyze ──────────────────────────────────────────────────────────────────
-
-export interface AnalyzeResult {
-  score: number;
-  verdict: string;
-  strengths?: string[];
-  weaknesses?: string[];
-  suggestions?: string[];
-  market?: string;
-  language?: string;
-  raw?: string;
-}
-
 // ─── Logger ───────────────────────────────────────────────────────────────────
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -97,10 +56,57 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: string;
+  provider?: AIProvider;
+  promptVersion?: string;
   context?: Record<string, unknown>;
-  error?: {
-    message: string;
-    stack?: string;
-    code?: string;
-  };
+  error?:
+    | string
+    | { message: string; stack?: string; code?: string };
+  [key: string]: unknown;
+}
+
+// ─── Resonance ────────────────────────────────────────────────────────────────
+
+export type ResonanceTrend = {
+  title: string;
+  market?: string;
+  language?: string;
+  source?: string;
+  resonanceScore?: number;
+  marketTension?: string;
+  insight?: string;
+  description?: string;
+  metrics?: Record<string, number | string>;
+  [key: string]: unknown;
+};
+
+export interface ResonanceTrendsResponse extends AIMeta {
+  trends: ResonanceTrend[];
+  market?: string;
+  generatedAt?: string;
+  [key: string]: unknown;
+}
+
+export interface ResonanceGenerateResponse extends AIMeta {
+  headline: string;
+  body: string;
+  cta: string;
+  trend: ResonanceTrend;
+  market?: string;
+  generatedAt?: string;
+  [key: string]: unknown;
+}
+
+// ─── Analyze ──────────────────────────────────────────────────────────────────
+
+export interface AnalyzeResult extends AIMeta {
+  score: number;
+  verdict: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  suggestions?: string[];
+  market?: string;
+  language?: string;
+  raw?: string;
+  [key: string]: unknown;
 }
