@@ -232,4 +232,813 @@ textarea{resize:none;line-height:1.65;display:block;width:100%}
   .sidebar{display:none}
   .market-row{flex-direction:column}
   .improve-shell{flex-direction:column}
-  .improve-left{width:100%;border-right:none;border-bottom:1px 
+  .improve-left{width:100%;border-right:none;border-bottom:1px solid var(--b1)}
+  .content{padding:16px}
+}
+`;
+
+/* ─── Market Picker ─────────────────────────────────────────────────────── */
+
+function MarketPicker({
+  market,
+  onChange,
+}: {
+  market: MarketKey;
+  onChange: (m: MarketKey) => void;
+}) {
+  return (
+    <div className="market-row">
+      {(Object.keys(MARKETS) as MarketKey[]).map((k) => (
+        <button
+          key={k}
+          className={`mkt${market === k ? " sel" : ""}`}
+          onClick={() => onChange(k)}
+        >
+          <div className="mkt-flag">{MARKETS[k].flag}</div>
+          <div className="mkt-name">{MARKETS[k].label}</div>
+          <div className="mkt-lang">{MARKETS[k].lang}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ─── STEP 1: Искать ────────────────────────────────────────────────────── */
+
+function SearchStep({
+  onSendToImprove,
+  onSendToEvaluate,
+}: {
+  onSendToImprove: (text: string) => void;
+  onSendToEvaluate: (text: string) => void;
+}) {
+  const [market, setMarket] = useState<MarketKey>("brazil");
+  const [loading, setLoading] = useState(false);
+  const [trends, setTrends] = useState<ResonanceTrend[]>([]);
+  const [generated, setGenerated] = useState<ResonanceGenerateResponse | null>(null);
+  const [genFor, setGenFor] = useState<string | null>(null);
+
+  async function findTrends() {
+    setLoading(true);
+    setTrends([]);
+    setGenerated(null);
+    setGenFor(null);
+    try {
+      const res = await fetch(`/api/resonance-trends?market=${market}`);
+      const json = (await res.json()) as ResonanceTrendsResponse;
+      setTrends(json.trends);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function generateContent(trend: ResonanceTrend) {
+    setGenFor(trend.title);
+    setGenerated(null);
+    const res = await fetch("/api/resonance-generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ market, trend }),
+    });
+    setGenerated((await res.json()) as ResonanceGenerateResponse);
+  }
+
+  return (
+    <>
+      <div className="hero">
+        <div>
+          <h1>Что сейчас резонирует на рынке?</h1>
+          <p className="hero-sub">
+            Живые B2B-тренды с генерацией контента и проверкой соответствия аудитории.
+          </p>
+        </div>
+        <div className="hero-badge">Шаг 1 · Искать</div>
+      </div>
+
+      <div className="card">
+        <div className="card-label">Выберите рынок</div>
+        <MarketPicker market={market} onChange={setMarket} />
+        <button className="btn-primary" onClick={findTrends} disabled={loading}>
+          {loading ? "Ищем тренды…" : "Найти тренды →"}
+        </button>
+      </div>
+
+      {trends.map((t) => (
+        <div className="trend-card" key={t.title}>
+          <div className="card-label">Тренд</div>
+          <div className="trend-title">{t.title}</div>
+          <div className="trend-badges">
+            <span className="tag tag-green">Резонанс: {t.resonanceScore}</span>
+            <span className="tag tag-blue">{t.marketTension}</span>
+          </div>
+          <p className="trend-insight">{t.insight}</p>
+          <div className="trend-actions">
+            <button
+              className="btn-primary"
+              style={{ height: 34, fontSize: 12 }}
+              onClick={() => generateContent(t)}
+            >
+              Сгенерировать контент
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => onSendToEvaluate(`${t.title}. ${t.insight}`)}
+            >
+              Проверить →
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => onSendToImprove(`${t.title}. ${t.insight}`)}
+            >
+              Улучшить →
+            </button>
+          </div>
+
+          {genFor === t.title && (
+            <div className="gen-card">
+              {!generated ? (
+                <div style={{ fontSize: 13, color: "var(--t2)" }}>Генерируем…</div>
+              ) : (
+                <>
+                  <div className="gen-row">
+                    <strong>Заголовок:</strong> {generated.headline}
+                  </div>
+                  <div className="gen-row">
+                    <strong>Текст:</strong> {generated.body}
+                  </div>
+                  <div className="gen-row">
+                    <strong>CTA:</strong> {generated.cta}
+                  </div>
+                  <div className="gen-meta">
+                    Провайдер: {generated.provider} · {generated.latencyMs}ms
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <button
+                      className="btn-ghost"
+                      onClick={() =>
+                        onSendToEvaluate(`${generated.headline}\n\n${generated.body}`)
+                      }
+                    >
+                      Проверить →
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      onClick={() =>
+                        onSendToImprove(`${generated.headline}\n\n${generated.body}`)
+                      }
+                    >
+                      Улучшить →
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/* ─── STEP 2: Проверять ─────────────────────────────────────────────────── */
+
+function EvaluateStep({
+  initialText,
+  onSendToImprove,
+}: {
+  initialText: string;
+  onSendToImprove: (text: string) => void;
+}) {
+  const [market, setMarket] = useState<MarketKey>("brazil");
+  const [tab, setTab] = useState<"url" | "text">("text");
+  const [text, setText] = useState(initialText);
+  const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (initialText) {
+      setText(initialText);
+      setResult(null);
+    }
+  }, [initialText]);
+
+  async function analyze() {
+    setError("");
+    if (!text.trim()) {
+      setError("Вставьте текст или URL.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ market, text }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Ошибка ${res.status}`);
+      }
+      setResult((await res.json()) as AnalyzeResult);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка анализа");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const generic = result ? Math.max(0, 100 - result.score) : 0;
+  const scoreColor =
+    generic <= 30 ? "var(--green)" : generic <= 60 ? "var(--amber)" : "var(--red)";
+  const verdictCfg = result
+    ? ({
+        PASS:       { cls: "v-pass", icon: "✓", label: "Звучит нативно" },
+        SUSPICIOUS: { cls: "v-sus", icon: "~", label: "Немного импортно" },
+        FOREIGN:    { cls: "v-for", icon: "✕", label: "Читается как перевод" },
+      }[result.verdict])
+    : null;
+
+  return (
+    <>
+      <div className="hero">
+        <div>
+          <h1>Ваш текст звучит по-местному?</h1>
+          <p className="hero-sub">
+            Анализ соответствия рынку, tone of voice и слабых мест — моментально.
+          </p>
+        </div>
+        <div className="hero-badge">Шаг 2 · Проверять</div>
+      </div>
+
+      {!result ? (
+        <>
+          <div className="card-label" style={{ marginBottom: 8 }}>Рынок</div>
+          <MarketPicker market={market} onChange={setMarket} />
+          <div className="hint-bar">
+            <strong>{MARKETS[market].label}:</strong> {MARKETS[market].summary}
+          </div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ display: "flex", borderBottom: "1px solid var(--b1)" }}>
+              {(["url", "text"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  style={{
+                    flex: 1,
+                    border: "none",
+                    padding: "10px 16px",
+                    background: tab === t ? "var(--s2)" : "transparent",
+                    color: tab === t ? "var(--t1)" : "var(--t2)",
+                    fontWeight: tab === t ? 500 : 400,
+                    fontSize: 12.5,
+                    fontFamily: "var(--font)",
+                    cursor: "pointer",
+                    transition: "all .12s",
+                  }}
+                >
+                  {t === "url" ? "🔗 URL" : "✍️ Текст"}
+                </button>
+              ))}
+            </div>
+            <div style={{ padding: 16 }}>
+              {tab === "url" ? (
+                <input
+                  className="inp"
+                  placeholder="https://ваш-лендинг.com"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              ) : (
+                <textarea
+                  className="inp"
+                  rows={7}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Вставьте маркетинговый текст…"
+                />
+              )}
+            </div>
+          </div>
+          {error && <div className="err">{error}</div>}
+          <button
+            className="btn-primary full"
+            style={{ marginTop: 4 }}
+            onClick={analyze}
+            disabled={loading}
+          >
+            {loading ? "Анализируем…" : "Проверить текст →"}
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="card">
+            <div className="card-label">Вердикт</div>
+            {verdictCfg && (
+              <div className={`verdict-badge ${verdictCfg.cls}`}>
+                {verdictCfg.icon} {result.verdict} — {verdictCfg.label}
+              </div>
+            )}
+            <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.65 }}>
+              {result.insight}
+            </p>
+          </div>
+
+          <div className="card">
+            <div className="card-label">Genericness</div>
+            <div className="score-big" style={{ color: scoreColor }}>
+              {generic}
+              <span style={{ fontSize: 20, color: "var(--t3)" }}>%</span>
+            </div>
+            <div className="score-bar-wrap">
+              <div
+                className="score-bar-fill"
+                style={{ width: `${generic}%`, background: scoreColor }}
+              />
+            </div>
+            <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 6 }}>
+              {generic <= 30
+                ? "Текст звучит аутентично."
+                : generic <= 60
+                ? "Некоторые фразы звучат импортно — стоит поработать."
+                : "Высокий genericness. Рекомендуем улучшить текст."}
+            </p>
+            <div className="meta-row">
+              <div className="meta-item">
+                <span>Провайдер </span>
+                {result.provider}
+              </div>
+              <div className="meta-item">
+                <span>Задержка </span>
+                {result.latencyMs}ms
+              </div>
+              {result.promptVersion && (
+                <div className="meta-item">
+                  <span>Промпт </span>
+                  {result.promptVersion}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-label">Напряжение рынка</div>
+            <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.65 }}>
+              {result.marketTension}
+            </p>
+          </div>
+
+          {(result.strengths ?? []).length > 0 && (
+            <div className="card">
+              <div className="card-label">Сигналы доверия</div>
+              <div className="list-items">
+                {(result.strengths ?? []).map((x) => (
+                  <div className="list-item" key={x}>
+                    <span className="bullet b-green" />
+                    {x}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(result.risks ?? []).length > 0 && (
+            <div className="card">
+              <div className="card-label">Риски</div>
+              <div className="list-items">
+                {(result.risks ?? []).map((x) => (
+                  <div className="list-item" key={x}>
+                    <span className="bullet b-red" />
+                    {x}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(result.suggestions ?? []).length > 0 && (
+            <div className="card">
+              <div className="card-label">Рекомендации</div>
+              <div className="list-items">
+                {(result.suggestions ?? []).map((x) => (
+                  <div className="list-item" key={x}>
+                    <span className="bullet b-blue" />
+                    {x}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button className="btn-next" onClick={() => onSendToImprove(text)}>
+            <div>
+              <span className="btn-next-label">Улучшить этот текст</span>
+              <span className="btn-next-sub">
+                Передать в AI-рефайн с учётом результатов анализа
+              </span>
+            </div>
+            <span className="btn-next-arrow">→</span>
+          </button>
+
+          <div style={{ marginTop: 8 }}>
+            <button className="btn-ghost" onClick={() => setResult(null)}>
+              ← Новый анализ
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ─── STEP 3: Улучшать ──────────────────────────────────────────────────── */
+
+function ImproveStep({ initialText }: { initialText: string }) {
+  const [inputText, setInputText] = useState(initialText);
+  const [result, setResult]       = useState("");
+  const [meta, setMeta]           = useState<AIResponseMeta | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError]         = useState("");
+  const [copied, setCopied]       = useState(false);
+  const [provider, setProvider]   = useState("gemini-2.5-flash");
+  const [prompt, setPrompt]       = useState("reduck/lead-magnet@1");
+  const abortRef                  = useRef<AbortController | null>(null);
+  const outRef                    = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialText) {
+      setInputText(initialText);
+      setResult("");
+      setMeta(null);
+    }
+  }, [initialText]);
+
+  useEffect(() => {
+    if (isLoading && outRef.current) {
+      outRef.current.scrollTop = outRef.current.scrollHeight;
+    }
+  }, [result, isLoading]);
+
+  const providers = [
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "groq",             name: "Groq" },
+    { id: "openrouter",       name: "OpenRouter" },
+    { id: "openai",           name: "OpenAI" },
+    { id: "anthropic",        name: "Anthropic" },
+  ];
+
+  async function run() {
+    if (!inputText.trim() || isLoading) return;
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setIsLoading(true);
+    setResult("");
+    setMeta(null);
+    setError("");
+    const t0 = Date.now();
+
+    const payload: ReDuckProcessRequest = {
+      text: inputText,
+      providerId: provider,
+      modelId: "latest",
+      promptVersion: prompt,
+    };
+
+    try {
+      const res = await fetch("/api/reduck/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Ошибка ${res.status}`);
+      }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("Нет тела ответа");
+      const dec = new TextDecoder();
+      let text = "";
+      let buf = "";
+      let done = false;
+      while (!done) {
+        const { value, done: d } = await reader.read();
+        done = d;
+        if (value) {
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop() ?? "";
+          for (const p of parts) {
+            const trimmed = p.trim();
+            if (!trimmed.startsWith("data: ")) continue;
+            const data = trimmed.slice(6);
+            if (data === "[DONE]") { done = true; break; }
+            text += data;
+            setResult(text);
+          }
+        }
+      }
+      setMeta({
+        provider: provider as AIResponseMeta["provider"],
+        promptVersion: prompt,
+        latencyMs: Date.now() - t0,
+        requestedAt: new Date().toISOString(),
+        costUsd: 0.0008,
+      });
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(
+        e instanceof Error ? e.message : "Что-то пошло не так. Попробуйте ещё раз."
+      );
+    } finally {
+      setIsLoading(false);
+      abortRef.current = null;
+    }
+  }
+
+  async function copy() {
+    if (!result) return;
+    await navigator.clipboard.writeText(result);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const words = result.trim() ? result.trim().split(/\s+/).length : 0;
+
+  return (
+    <>
+      <div className="hero">
+        <div>
+          <h1>Улучшаем ваш текст</h1>
+          <p className="hero-sub">
+            AI-рефайн с учётом рынка, tone of voice и маркетинговых задач.
+          </p>
+        </div>
+        <div className="hero-badge">Шаг 3 · Улучшать</div>
+      </div>
+
+      <div className="improve-shell">
+        <div className="improve-left">
+          <div className="panel-hd">
+            <div className="panel-hd-title">Ваш текст</div>
+            <div className="panel-hd-sub">Вставьте или отредактируйте текст для улучшения</div>
+          </div>
+          <div className="panel-body">
+            <div>
+              <div className="field-label">Маркетинговый текст</div>
+              <textarea
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Вставьте текст, который хотите улучшить…"
+                rows={8}
+              />
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--t3)",
+                  textAlign: "right",
+                  marginTop: 4,
+                }}
+              >
+                {inputText.trim() ? `${inputText.trim().split(/\s+/).length} слов` : ""}
+              </div>
+            </div>
+            <div className="controls-grid">
+              <div>
+                <div className="field-label">Провайдер</div>
+                <div className="sel-wrap">
+                  <select
+                    value={provider}
+                    onChange={(e) => setProvider(e.target.value)}
+                    disabled={isLoading}
+                  >
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="sel-arrow">▾</span>
+                </div>
+              </div>
+              <div>
+                <div className="field-label">Промпт</div>
+                <div className="sel-wrap">
+                  <select
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    disabled={isLoading}
+                  >
+                    {Object.keys(REDUCK_PROMPT_MAP).map((k) => (
+                      <option key={k} value={`reduck/${k}@1`}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="sel-arrow">▾</span>
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn-primary full"
+              onClick={run}
+              disabled={isLoading || !inputText.trim()}
+            >
+              {isLoading ? "Улучшаем…" : "Улучшить текст →"}
+            </button>
+            {isLoading && (
+              <button
+                className="btn-stop"
+                onClick={() => abortRef.current?.abort()}
+              >
+                Остановить генерацию
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="improve-right">
+          <div className="out-hd">
+            <span className="out-hd-title">
+              {result ? "Улучшенный текст" : "Результат"}
+            </span>
+            {result && (
+              <div className="out-actions">
+                <button className="btn-xs" onClick={copy}>
+                  {copied ? "✓ Скопировано" : "⎘ Копировать"}
+                </button>
+                <button
+                  className="btn-xs"
+                  onClick={() => { setResult(""); setMeta(null); }}
+                >
+                  Очистить
+                </button>
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="err" style={{ margin: "16px 20px 0" }}>
+              {error}
+            </div>
+          )}
+
+          <div className="out-body" ref={outRef}>
+            {!result && !isLoading ? (
+              <div className="empty-state">
+                <div className="empty-icon">✦</div>
+                <div className="empty-title">Готов к работе</div>
+                <div className="empty-sub">
+                  Вставьте текст слева и нажмите «Улучшить» — результат появится здесь.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="result-text">
+                  {result}
+                  {isLoading && <span className="cursor" />}
+                </div>
+                {meta && !isLoading && (
+                  <div className="meta-row">
+                    <div className="meta-item">
+                      <span>Провайдер </span>
+                      {meta.provider}
+                    </div>
+                    <div className="meta-item">
+                      <span>Промпт </span>
+                      {meta.promptVersion}
+                    </div>
+                    <div className="meta-item">
+                      <span>Задержка </span>
+                      {meta.latencyMs}ms
+                    </div>
+                    <div className="meta-item">
+                      <span>Слов </span>
+                      {words}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ─── Root App ──────────────────────────────────────────────────────────── */
+
+export default function BreasonApp() {
+  const [step, setStep]               = useState<Step>("evaluate");
+  const [improveText, setImproveText] = useState("");
+  const [evaluateText, setEvaluateText] = useState("");
+  const [streaming] = useState(false);
+  const [barText, setBarText]         = useState("");
+
+  function goImprove(text: string)  { setImproveText(text);  setStep("improve");  }
+  function goEvaluate(text: string) { setEvaluateText(text); setStep("evaluate"); }
+
+  function handleBarSubmit() {
+    if (!barText.trim()) return;
+    if (step === "evaluate") goEvaluate(barText);
+    else goImprove(barText);
+    setBarText("");
+  }
+
+  return (
+    <>
+      <style>{STYLE}</style>
+      <div className="shell">
+
+        <aside className="sidebar">
+          <div className="sb-top">
+            <div className="sb-mark">B</div>
+            <span className="sb-brand">Breason</span>
+          </div>
+          <div className="sb-steps">
+            <div className="sb-section">Workflow</div>
+            {(["search", "evaluate", "improve"] as Step[]).map((s, i) => (
+              <button
+                key={s}
+                className={`step-btn${step === s ? " active" : ""}`}
+                onClick={() => setStep(s)}
+              >
+                <div className="step-num">{i + 1}</div>
+                <div>
+                  <span className="step-label">{stepLabels[s]}</span>
+                  <span className="step-sub">{stepSubs[s]}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="sb-foot">Breason MVP · v0.1</div>
+        </aside>
+
+        <div className="main">
+          <header className="topbar">
+            <div className="topbar-left">
+              <span className="crumb">
+                Breason <span className="crumb-sep">/</span>
+              </span>
+              <span className="page-name">{stepLabels[step]}</span>
+            </div>
+            <div className="topbar-right">
+              {streaming && (
+                <div className="pill">
+                  <span className="pill-dot on" />
+                  Генерируем…
+                </div>
+              )}
+            </div>
+          </header>
+
+          <div className="step-bar">
+            {(["search", "evaluate", "improve"] as Step[]).map((s) => (
+              <div
+                key={s}
+                className={`step-seg${step === s ? " active" : ""}`}
+              />
+            ))}
+          </div>
+
+          <div className="content">
+            {step === "search" && (
+              <SearchStep
+                onSendToImprove={goImprove}
+                onSendToEvaluate={goEvaluate}
+              />
+            )}
+            {step === "evaluate" && (
+              <EvaluateStep
+                initialText={evaluateText}
+                onSendToImprove={goImprove}
+              />
+            )}
+            {step === "improve" && <ImproveStep initialText={improveText} />}
+          </div>
+
+          <div className="bottom-bar">
+            <input
+              className="bar-inp"
+              placeholder={
+                step === "search"
+                  ? "Введите тему для поиска трендов…"
+                  : step === "evaluate"
+                  ? "Вставьте текст для быстрого анализа…"
+                  : "Вставьте текст для улучшения…"
+              }
+              value={barText}
+              onChange={(e) => setBarText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleBarSubmit()}
+            />
+            <button className="bar-send" onClick={handleBarSubmit}>
+              →
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
