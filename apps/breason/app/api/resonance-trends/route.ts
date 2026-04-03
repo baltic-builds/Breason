@@ -22,7 +22,10 @@ async function tryTavily(market: MarketKey): Promise<ResonanceTrendsResponse | n
     });
 
     if (!res.ok) return null;
-    const json = await res.json() as { results?: Array<{ title?: string; content?: string }> };
+
+    const json = await res.json() as {
+      results?: Array<{ title?: string; content?: string }>;
+    };
     if (!json.results?.length) return null;
 
     const trends: ResonanceTrend[] = json.results.slice(0, 5).map((item, i) => ({
@@ -50,12 +53,17 @@ export async function GET(request: Request): Promise<Response> {
   const market = searchParams.get("market") ?? "brazil";
 
   if (!isMarketKey(market)) {
-    return Response.json({ error: "market must be brazil | poland | germany" }, { status: 400 });
+    return Response.json(
+      { error: "market must be brazil | poland | germany" },
+      { status: 400 }
+    );
   }
 
   try {
     const fromTavily = await tryTavily(market);
-    if (fromTavily) return Response.json(fromTavily, { headers: { "X-Request-Id": requestId } });
+    if (fromTavily) {
+      return Response.json(fromTavily, { headers: { "X-Request-Id": requestId } });
+    }
 
     const result = await resonanceTrends(market, requestId);
     return Response.json(result, { headers: { "X-Request-Id": requestId } });
