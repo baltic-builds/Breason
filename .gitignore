@@ -1,4 +1,3 @@
-```
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -21,3 +20,25 @@ out/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.swp
+
+# Test coverage
+coverage/
+
+# Vercel
+.vercel/
+
+# Optional: local turbo cache
+.turbo/
