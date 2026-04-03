@@ -13,16 +13,13 @@ import {
 } from "@breason/prompts";
 import { callAiWithFallback, softJson } from "./ai";
 
-export const marketLabel: Record<MarketKey, string> = {
+export const marketLabel: Record<string, string> = {
   brazil: "Brazil",
   poland: "Poland",
   germany: "Germany",
 };
 
 const NOW = () => new Date().toISOString();
-
-type AnalyzePayload = Omit<AnalyzeResult, keyof AIResponseMeta>;
-type GeneratePayload = Omit<ResonanceGenerateResponse, keyof AIResponseMeta>;
 
 export async function analyzeMarketing(
   text: string,
@@ -36,7 +33,6 @@ export async function analyzeMarketing(
     requestId
   );
 
-  const parsed = softJson<AnalyzePayload>(raw);
   const meta: AIResponseMeta = {
     provider,
     promptVersion: "analyze@1",
@@ -45,7 +41,11 @@ export async function analyzeMarketing(
     requestedAt: NOW(),
   };
 
-  if (parsed) return { ...parsed, ...meta };
+  const parsed = softJson<Partial<AnalyzeResult>>(raw);
+
+  if (parsed?.score !== undefined && parsed?.verdict) {
+    return { ...meta, ...parsed } as AnalyzeResult;
+  }
 
   const len = text.trim().length;
   const score = Math.max(35, Math.min(92, Math.floor(len / 6) + 40));
@@ -73,7 +73,6 @@ export async function resonanceTrends(
     requestId
   );
 
-  const parsed = softJson<{ trends: ResonanceTrend[] }>(raw);
   const meta: AIResponseMeta = {
     provider,
     promptVersion: "resonance-trends@1",
@@ -82,9 +81,13 @@ export async function resonanceTrends(
     requestedAt: NOW(),
   };
 
-  if (parsed?.trends?.length) return { ...meta, trends: parsed.trends.slice(0, 5) };
+  const parsed = softJson<{ trends: ResonanceTrend[] }>(raw);
 
-  const localTrends: Record<MarketKey, ResonanceTrend[]> = {
+  if (parsed?.trends?.length) {
+    return { ...meta, trends: parsed.trends.slice(0, 5) };
+  }
+
+  const localTrends: Record<string, ResonanceTrend[]> = {
     brazil: [
       { title: "Conversational funnel via WhatsApp", resonanceScore: 84, marketTension: "Speed vs trust", insight: "Brands that reply within minutes convert more qualified demand." },
       { title: "Founder-led credibility posts", resonanceScore: 76, marketTension: "Humanity vs polish", insight: "Raw, practical posts outperform polished generic brand language." },
@@ -99,7 +102,7 @@ export async function resonanceTrends(
     ],
   };
 
-  return { ...meta, provider: "local", trends: localTrends[market] };
+  return { ...meta, provider: "local", trends: localTrends[market] ?? [] };
 }
 
 export async function resonanceGenerate(
@@ -114,7 +117,6 @@ export async function resonanceGenerate(
     requestId
   );
 
-  const parsed = softJson<GeneratePayload>(raw);
   const meta: AIResponseMeta = {
     provider,
     promptVersion: "resonance-generate@1",
@@ -123,13 +125,17 @@ export async function resonanceGenerate(
     requestedAt: NOW(),
   };
 
-  if (parsed?.headline && parsed?.body && parsed?.cta) return { ...parsed, ...meta };
+  const parsed = softJson<Partial<ResonanceGenerateResponse>>(raw);
+
+  if (parsed?.headline && parsed?.body && parsed?.cta) {
+    return { ...meta, ...parsed } as ResonanceGenerateResponse;
+  }
 
   return {
     ...meta,
     provider: "local",
     headline: `${trend.title}: message that sounds native in ${marketLabel[market]}`,
-    body: `${trend.insight} Breason suggests reframing around this market tension: ${trend.marketTension}.`,
+    body: `${trend.insight ?? ""} Breason suggests reframing around this market tension: ${trend.marketTension ?? ""}.`,
     cta: "See localised version",
   };
 }
