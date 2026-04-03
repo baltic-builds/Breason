@@ -107,7 +107,7 @@ export interface ResonanceGenerateResponse extends AIResponseMeta {
   [key: string]: unknown;
 }
 
-// ─── Request shapes (API route inputs) ───────────────────────────────────────
+// ─── Request shapes ───────────────────────────────────────────────────────────
 
 export interface AnalyzeRequest {
   text: string;
@@ -139,8 +139,7 @@ export interface AnalyzeResult extends AIResponseMeta {
 // ─── Feature Flags ────────────────────────────────────────────────────────────
 
 export interface FeatureFlags {
-  resonanceEnabled: boolean;
-  reDuckEnabled: boolean;
-  analyzeEnabled: boolean;
-  [key: string]: boolean;
+  enableResonance: boolean;
+  enableReDuckIntegration: boolean;
+  enableRateLimiting: boolean;
 }
