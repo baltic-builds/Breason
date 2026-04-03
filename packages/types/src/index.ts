@@ -22,8 +22,26 @@ export interface ReDuckProcessRequest {
   promptVersion?: string;
 }
 
-// Market & other types (добавляй по мере необходимости)
+// Market & other types
 export type MarketKey = string;
 export const isMarketKey = (key: string): key is MarketKey => {
   return ['br', 'mx', 'latam', 'global'].includes(key);
+};
+
+// Resonance
+export type ResonanceTrend = {
+  /** Название / ключевая фраза тренда */
+  title: string;
+  /** Рынок / страна, например "BR", "MX" */
+  market?: string;
+  /** Язык, например "pt-BR", "es" */
+  language?: string;
+  /** Источник данных: tavily, google и т.д. */
+  source?: string;
+  /** Релевантность запросу/аудитории (0..1) */
+  relevanceScore?: number;
+  /** Краткое пояснение / контекст */
+  description?: string;
+  /** Любые числовые или строковые метрики */
+  metrics?: Record<string, number | string>;
 };
