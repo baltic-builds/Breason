@@ -7,9 +7,10 @@ export type AIProvider =
   | 'openrouter'
   | 'openai'
   | 'anthropic'
+  | 'tavily'
   | 'local';
 
-// ─── AI Meta (спред в корень объекта-ответа) ──────────────────────────────────
+// ─── AI Meta ──────────────────────────────────────────────────────────────────
 
 export interface AIResponseMeta {
   provider: AIProvider;
@@ -22,11 +23,6 @@ export interface AIResponseMeta {
 
 // ─── ReDuck ───────────────────────────────────────────────────────────────────
 
-export interface ReDuckProcessResult {
-  processedText: string;
-  meta: AIResponseMeta;
-}
-
 export interface ReDuckProcessRequest {
   text: string;
   providerId: string;
@@ -34,12 +30,30 @@ export interface ReDuckProcessRequest {
   promptVersion?: string;
 }
 
+export interface ReDuckProcessResult {
+  processedText: string;
+  meta: AIResponseMeta;
+}
+
+export interface ReDuckModel {
+  id: string;
+  label: string;
+  providerId: string;
+  description?: string;
+}
+
+export interface ReDuckProviderGroup {
+  id: string;
+  name: string;
+  models: ReDuckModel[];
+}
+
 // ─── Market ───────────────────────────────────────────────────────────────────
 
 export type MarketKey = string;
 
 export const isMarketKey = (key: string): key is MarketKey => {
-  return ['br', 'mx', 'latam', 'global'].includes(key);
+  return ['br', 'mx', 'latam', 'global', 'brazil', 'poland', 'germany'].includes(key);
 };
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
@@ -52,6 +66,10 @@ export interface LogEntry {
   timestamp: string;
   provider?: string;
   promptVersion?: string;
+  latencyMs?: number;
+  tokensUsed?: number;
+  requestId?: string;
+  success?: boolean;
   context?: Record<string, unknown>;
   error?: string | { message: string; stack?: string; code?: string };
   [key: string]: unknown;
@@ -72,7 +90,6 @@ export type ResonanceTrend = {
   [key: string]: unknown;
 };
 
-// AIResponseMeta спредится в корень — поэтому extends
 export interface ResonanceTrendsResponse extends AIResponseMeta {
   trends: ResonanceTrend[];
   market?: string;
@@ -90,6 +107,18 @@ export interface ResonanceGenerateResponse extends AIResponseMeta {
   [key: string]: unknown;
 }
 
+// ─── Request shapes (API route inputs) ───────────────────────────────────────
+
+export interface AnalyzeRequest {
+  text: string;
+  market: string;
+}
+
+export interface ResonanceGenerateRequest {
+  market: string;
+  trend: ResonanceTrend;
+}
+
 // ─── Analyze ──────────────────────────────────────────────────────────────────
 
 export interface AnalyzeResult extends AIResponseMeta {
@@ -105,4 +134,13 @@ export interface AnalyzeResult extends AIResponseMeta {
   language?: string;
   raw?: string;
   [key: string]: unknown;
+}
+
+// ─── Feature Flags ────────────────────────────────────────────────────────────
+
+export interface FeatureFlags {
+  resonanceEnabled: boolean;
+  reDuckEnabled: boolean;
+  analyzeEnabled: boolean;
+  [key: string]: boolean;
 }
