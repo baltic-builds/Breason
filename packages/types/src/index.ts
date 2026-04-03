@@ -1,14 +1,3 @@
-// ─── Shared Meta ─────────────────────────────────────────────────────────────
-
-export interface AIMeta {
-  provider: AIProvider;
-  promptVersion: string;
-  tokensUsed?: number;
-  latencyMs: number;
-  requestedAt: string;
-  costUsd?: number;
-}
-
 // ─── AI Providers ─────────────────────────────────────────────────────────────
 
 export type AIProvider =
@@ -20,7 +9,9 @@ export type AIProvider =
   | 'anthropic'
   | 'local';
 
-export interface AIResponseMeta extends AIMeta {
+// ─── AI Meta (всегда отдельный объект внутри response) ────────────────────────
+
+export interface AIResponseMeta {
   provider: AIProvider;
   promptVersion: string;
   tokensUsed?: number;
@@ -28,6 +19,8 @@ export interface AIResponseMeta extends AIMeta {
   requestedAt: string;
   costUsd?: number;
 }
+
+// ─── ReDuck ───────────────────────────────────────────────────────────────────
 
 export interface ReDuckProcessResult {
   processedText: string;
@@ -44,6 +37,7 @@ export interface ReDuckProcessRequest {
 // ─── Market ───────────────────────────────────────────────────────────────────
 
 export type MarketKey = string;
+
 export const isMarketKey = (key: string): key is MarketKey => {
   return ['br', 'mx', 'latam', 'global'].includes(key);
 };
@@ -56,12 +50,10 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: string;
-  provider?: AIProvider;
+  provider?: string;
   promptVersion?: string;
   context?: Record<string, unknown>;
-  error?:
-    | string
-    | { message: string; stack?: string; code?: string };
+  error?: string | { message: string; stack?: string; code?: string };
   [key: string]: unknown;
 }
 
@@ -80,26 +72,28 @@ export type ResonanceTrend = {
   [key: string]: unknown;
 };
 
-export interface ResonanceTrendsResponse extends AIMeta {
+export interface ResonanceTrendsResponse {
   trends: ResonanceTrend[];
   market?: string;
   generatedAt?: string;
+  meta?: AIResponseMeta;
   [key: string]: unknown;
 }
 
-export interface ResonanceGenerateResponse extends AIMeta {
+export interface ResonanceGenerateResponse {
   headline: string;
   body: string;
   cta: string;
-  trend: ResonanceTrend;
+  trend?: ResonanceTrend;
   market?: string;
   generatedAt?: string;
+  meta?: AIResponseMeta;
   [key: string]: unknown;
 }
 
 // ─── Analyze ──────────────────────────────────────────────────────────────────
 
-export interface AnalyzeResult extends AIMeta {
+export interface AnalyzeResult {
   score: number;
   verdict: string;
   strengths?: string[];
@@ -108,5 +102,6 @@ export interface AnalyzeResult extends AIMeta {
   market?: string;
   language?: string;
   raw?: string;
+  meta?: AIResponseMeta;
   [key: string]: unknown;
 }
