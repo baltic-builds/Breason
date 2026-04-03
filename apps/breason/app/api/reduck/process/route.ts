@@ -1,5 +1,5 @@
 import type { ReDuckProcessRequest } from '@breason/types';
-import { NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { callAiWithFallback } from '@breason/shared';
 
 export const dynamic = 'force-dynamic';
