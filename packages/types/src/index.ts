@@ -139,7 +139,7 @@ export interface AnalyzeResult extends AIResponseMeta {
 // ─── Feature Flags ────────────────────────────────────────────────────────────
 
 export interface FeatureFlags {
-  enableResonance: boolean;
-  enableReDuckIntegration: boolean;
-  enableRateLimiting: boolean;
+  resonanceEnabled: boolean;
+  reDuckEnabled: boolean;
+  analyzeEnabled: boolean;
 }
