@@ -9,7 +9,7 @@ export type AIProvider =
   | 'anthropic'
   | 'local';
 
-// ─── AI Meta (всегда отдельный объект внутри response) ────────────────────────
+// ─── AI Meta (спред в корень объекта-ответа) ──────────────────────────────────
 
 export interface AIResponseMeta {
   provider: AIProvider;
@@ -72,36 +72,37 @@ export type ResonanceTrend = {
   [key: string]: unknown;
 };
 
-export interface ResonanceTrendsResponse {
+// AIResponseMeta спредится в корень — поэтому extends
+export interface ResonanceTrendsResponse extends AIResponseMeta {
   trends: ResonanceTrend[];
   market?: string;
   generatedAt?: string;
-  meta?: AIResponseMeta;
   [key: string]: unknown;
 }
 
-export interface ResonanceGenerateResponse {
+export interface ResonanceGenerateResponse extends AIResponseMeta {
   headline: string;
   body: string;
   cta: string;
   trend?: ResonanceTrend;
   market?: string;
   generatedAt?: string;
-  meta?: AIResponseMeta;
   [key: string]: unknown;
 }
 
 // ─── Analyze ──────────────────────────────────────────────────────────────────
 
-export interface AnalyzeResult {
+export interface AnalyzeResult extends AIResponseMeta {
   score: number;
   verdict: string;
   strengths?: string[];
   weaknesses?: string[];
   suggestions?: string[];
+  risks?: string[];
+  marketTension?: string;
+  insight?: string;
   market?: string;
   language?: string;
   raw?: string;
-  meta?: AIResponseMeta;
   [key: string]: unknown;
 }
