@@ -1,6 +1,6 @@
+import type { ReDuckProcessRequest } from '@breason/types';
 import { NextRequest } from 'next/server';
 import { callAiWithFallback } from '@breason/shared';
-import type { ReDuckProcessRequest } from '@breason/types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
