@@ -1,5 +1,4 @@
 {
-  "_comment_how_to_add_feature": "HOW TO ADD NEW FEATURE FLAG: 1) Add a new boolean key in this file. 2) Extend FeatureFlags interface in packages/types/src/index.ts. 3) Use the flag in UI or API route with a safe default path. 4) Document rollout and env assumptions in README. 5) Keep names action-oriented, e.g. enableResonanceInsightsV2.",
   "enableResonance": true,
   "enableReDuckIntegration": true,
   "enableRateLimiting": true
