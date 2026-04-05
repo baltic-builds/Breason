@@ -17,7 +17,7 @@
     },
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**"]
+      "outputs": ["apps/breason/.next/**", ".next/**", "dist/**"]
     },
     "type-check": {
       "dependsOn": ["^type-check"],
