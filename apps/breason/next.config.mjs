@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Это поможет избежать ошибок при сборке, если есть проблемы с типами или линтером
+  // Игнорируем ошибки при сборке, чтобы билд прошел успешно несмотря на конфликты линтера
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
 };
