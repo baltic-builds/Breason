@@ -1,103 +1,66 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODELS = {
-  GEMINI: "gemini-1.5-flash", // или актуальная версия на 2026
-  GROQ: "llama-3.3-70b-versatile",
-  OPENROUTER: "google/gemini-2.0-flash-lite-preview-02-05:free"
-};
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const market = searchParams.get('market') || 'brazil';
-
-  const marketNames: Record<string, string> = {
-    brazil: "Бразилия (Brazil)",
-    poland: "Польша (Poland)",
-    germany: "Германия (Germany)"
-  };
-
-  const targetMarket = marketNames[market] || market;
-  const systemPrompt = `
-    Ты эксперт по B2B трендам в ${targetMarket}. Сегодня апрель 2026 года.
-    Найди 3 свежих тренда за последние 90 дней.
-    ОТВЕТЬ СТРОГО В JSON:
-    {
-      "market": "${targetMarket}",
-      "trends": [
-        {
-          "trend_name": "Название",
-          "narrative_hook": "Инсайт (короткая фраза)",
-          "market_tension": "Проблема/напряжение на рынке",
-          "why_now": "Почему это актуально именно сейчас",
-          "resonance_score": 95
-        }
-      ]
-    }
-    Весь текст на русском.
-  `;
-
-  // 1. GEMINI + GOOGLE SEARCH
+export async function POST(request: Request) {
   try {
-    const model = genAI.getGenerativeModel({ 
-      model: MODELS.GEMINI, 
-      //@ts-ignore (зависит от версии SDK)
-      tools: [{ googleSearch: {} }] 
-    });
-    const result = await model.generateContent(systemPrompt);
-    return NextResponse.json(parseJson(result.response.text()));
-  } catch (err) {
-    console.error("Gemini Search failed, trying Groq...");
+    const { market, action, trendTitle, url, text } = await request.json();
 
-    // 2. GROQ FALLBACK
-    if (process.env.GROQ_API_KEY) {
-      try {
-        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: MODELS.GROQ,
-            messages: [{ role: "user", content: systemPrompt }],
-            response_format: { type: "json_object" }
-          })
-        });
-        const groqData = await groqRes.json();
-        return NextResponse.json(JSON.parse(groqData.choices[0].message.content));
-      } catch (e) {
-        console.error("Groq failed, trying OpenRouter...");
-        return await handleOpenRouterFallback(systemPrompt);
-      }
+    const marketNames: Record<string, string> = {
+      brazil: "Бразилия",
+      poland: "Польша",
+      germany: "Германия"
+    };
+    const targetMarket = marketNames[market as string] || market;
+
+    // Промпт для поиска трендов
+    if (action === "fetch_trends") {
+      const prompt = `Ты ведущий B2B аналитик. Сейчас апрель 2026 года. 
+      Найди 3 самых актуальных бизнес-тренда для рынка ${targetMarket} за последние 90 дней.
+      ОТВЕТЬ СТРОГО В JSON:
+      {
+        "trends": [
+          {
+            "trend_name": "Название",
+            "narrative_hook": "Цепляющий инсайт",
+            "market_tension": "В чем боль рынка",
+            "why_now": "Почему актуально сейчас",
+            "resonance_score": 92
+          }
+        ]
+      }`;
+      
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(prompt);
+      return NextResponse.json(JSON.parse(result.response.text().replace(/```json|```/g, "")));
     }
-    return NextResponse.json({ error: "No providers" }, { status: 500 });
-  }
-}
 
-async function handleOpenRouterFallback(prompt: string) {
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: MODELS.OPENROUTER,
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
-    const data = await res.json();
-    return NextResponse.json(parseJson(data.choices[0].message.content));
-  } catch {
-    return NextResponse.json({ error: "All failed" }, { status: 503 });
-  }
-}
+    // Промпт для "Узнать больше" (Deep Dive)
+    if (action === "deep_dive") {
+      const prompt = `Дай глубокую B2B аналитику по тренду "${trendTitle}" для региона ${targetMarket}. 
+      Сфокусируйся на цифрах, культурном коде и конкретных рекомендациях для маркетинга. 
+      Ответ должен быть на русском языке, профессиональным и сжатым.`;
+      
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(prompt);
+      return NextResponse.json({ analysis: result.response.text() });
+    }
 
-function parseJson(text: string) {
-  const match = text.match(/\{[\s\S]*\}/);
-  return match ? JSON.parse(match[0]) : { trends: [] };
+    // Логика для раздела "Проверить" (Evaluate)
+    if (action === "evaluate") {
+      const source = url ? `страницы по ссылке ${url}` : `следующего текста: ${text}`;
+      const prompt = `Проведи критический анализ ${source} на соответствие рынку ${targetMarket}. 
+      Выяви культурные несоответствия и ошибки в позиционировании. Дай краткий вердикт.`;
+      
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(prompt);
+      return NextResponse.json({ result: result.response.text() });
+    }
+
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+  }
 }
