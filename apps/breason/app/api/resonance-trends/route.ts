@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Константы моделей для легкого обновления в будущем
+// ЦЕНТРАЛЬНЫЙ КОНФИГ МОДЕЛЕЙ (обновляй здесь при выходе новых версий)
 const MODELS = {
-  PRIMARY: "gemini-3.1-flash-lite-preview",
-  SECONDARY: "gemini-3-flash-preview",
-  FALLBACK_OPENROUTER: "google/gemini-2.0-flash-lite-preview-02-05:free"
+  GEMINI_PRIMARY: "gemini-3.1-flash-lite-preview",
+  OPENROUTER_FREE: "google/gemini-2.0-flash-lite-preview-02-05:free" 
 };
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -22,49 +21,84 @@ export async function GET(request: Request) {
 
   const targetMarket = marketNames[market] || market;
 
-  // 1. Попытка через основной Gemini
+  const systemPrompt = `
+    Ты эксперт по B2B трендам в ${targetMarket}. Сегодня апрель 2026 года.
+    Найди 3 свежих тренда за последние 90 дней.
+    
+    ОТВЕТЬ СТРОГО В JSON:
+    {
+      "market": "${targetMarket}",
+      "analyst_note": "Краткий инсайт.",
+      "trends": [
+        {
+          "trend_name": "Название",
+          "narrative_hook": "Зацепка",
+          "market_tension": "Конфликт",
+          "why_now": "Почему сейчас",
+          "resonance_score": 95
+        }
+      ]
+    }
+    Весь текст внутри JSON на русском языке.
+  `;
+
+  // --- ПОПЫТКА 1: Gemini 3.1 Flash Lite с Google Search ---
   try {
     const model = genAI.getGenerativeModel({ 
-      model: MODELS.PRIMARY,
+      model: MODELS.GEMINI_PRIMARY,
       tools: [{ googleSearch: {} }] 
     });
-
-    const systemPrompt = `Ты эксперт по B2B трендам в ${targetMarket}. Используй Google Search (2026). Ответь СТРОГО в JSON: {"market": "${targetMarket}", "trends": [{"trend_name": "...", "resonance_score": 95}]}. Весь текст на русском.`;
-
     const result = await model.generateContent(systemPrompt);
     const text = result.response.text();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    
-    if (!jsonMatch) throw new Error("No JSON found");
-    return NextResponse.json(JSON.parse(jsonMatch[0]));
-
+    return NextResponse.json(parseJsonSafe(text));
   } catch (error: any) {
-    console.error("Primary Model Error, switching to Fallback...", error.status);
-
-    // 2. FALLBACK на OpenRouter (если основной Gemini перегружен)
-    if (process.env.OPENROUTER_API_KEY) {
-      try {
-        const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: MODELS.FALLBACK_OPENROUTER,
-            messages: [{ role: "user", content: `Дай B2B тренды для ${targetMarket} в JSON формате. Русская локализация.` }]
-          })
-        });
-
-        const orData = await orResponse.json();
-        const content = orData.choices[0].message.content;
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        return NextResponse.json(JSON.parse(jsonMatch[0]));
-      } catch (fallbackError) {
-        return NextResponse.json({ error: "Все сервисы перегружены" }, { status: 503 });
-      }
+    console.error("Gemini + Search failed, trying without Search...", error.status);
+    
+    // --- ПОПЫТКА 2: Gemini 3.1 Flash Lite БЕЗ поиска (обычно лимиты здесь свободнее) ---
+    try {
+      const basicModel = genAI.getGenerativeModel({ model: MODELS.GEMINI_PRIMARY });
+      const result = await basicModel.generateContent(systemPrompt + " (Используй внутренние знания)");
+      return NextResponse.json(parseJsonSafe(result.response.text()));
+    } catch (basicError) {
+      console.error("Gemini Basic failed, switching to OpenRouter...");
+      
+      // --- ПОПЫТКА 3: OpenRouter (Fallback) ---
+      return await handleOpenRouterFallback(targetMarket, systemPrompt);
     }
-
-    return NextResponse.json({ error: "Ошибка генерации" }, { status: 500 });
   }
+}
+
+// Вспомогательная функция для OpenRouter
+async function handleOpenRouterFallback(market: string, prompt: string) {
+  if (!process.env.OPENROUTER_API_KEY) {
+    return NextResponse.json({ error: "API ключи исчерпаны" }, { status: 503 });
+  }
+
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODELS.OPENROUTER_FREE,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+
+    if (!res.ok) throw new Error("OpenRouter error");
+    const data = await res.json();
+    const content = data.choices[0].message.content;
+    return NextResponse.json(parseJsonSafe(content));
+  } catch (e) {
+    return NextResponse.json({ error: "Сервисы временно недоступны" }, { status: 503 });
+  }
+}
+
+// Парсер JSON, который не боится лишнего текста от ИИ
+function parseJsonSafe(text: string) {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No JSON in response");
+  return JSON.parse(jsonMatch[0]);
 }
