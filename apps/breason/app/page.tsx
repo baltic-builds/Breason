@@ -409,12 +409,10 @@ function SearchStep({ onSendToImprove, onSendToEvaluate }: {
   const [loading, setLoading] = useState(false);
   const [trends, setTrends] = useState<ResonanceTrend[]>([]);
   const [analystNote, setAnalystNote] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<ResonanceGenerateResponse | null>(null);
-  const [genFor, setGenFor] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function findTrends() {
-    setLoading(true); setTrends([]); setGenerated(null); setGenFor(null);
+    setLoading(true); setTrends([]);
     setAnalystNote(null); setError("");
     try {
       const res = await fetch(`/api/resonance-trends?market=${market}`);
@@ -426,17 +424,6 @@ function SearchStep({ onSendToImprove, onSendToEvaluate }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось загрузить тренды");
     } finally { setLoading(false); }
-  }
-
-  async function generateContent(trend: ResonanceTrend) {
-    setGenFor(trend.title); setGenerated(null);
-    try {
-      const res = await fetch("/api/resonance-generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ market, trend }),
-      });
-      setGenerated((await res.json()) as ResonanceGenerateResponse);
-    } catch { setGenFor(null); }
   }
 
   return (
@@ -466,17 +453,21 @@ function SearchStep({ onSendToImprove, onSendToEvaluate }: {
         </div>
       )}
 
-      {trends.map((t) => {
+      {trends.map((t, idx) => {
         const hook = (t as any).narrative_hook as string | undefined;
         const tension = (t as any).market_tension as string | undefined ?? t.marketTension;
         const whyNow = (t as any).why_now as string | undefined;
+        const brief = (t as any).brief_for_marketer as string | undefined;
+        const title = (t as any).trend_name || t.title || `Тренд ${idx + 1}`;
 
         return (
-          <div className="trend-card" key={t.title}>
+          <div className="trend-card" key={title}>
             <div className="trend-header">
-              <div className="trend-title">{t.title}</div>
-              {t.resonanceScore !== undefined && (
+              <div className="trend-title">{title}</div>
+              {t.resonanceScore !== undefined && t.resonanceScore !== null ? (
                 <div className="score-badge">{t.resonanceScore}</div>
+              ) : (t as any).resonance_score !== undefined && (
+                <div className="score-badge">{(t as any).resonance_score}</div>
               )}
             </div>
 
@@ -498,38 +489,10 @@ function SearchStep({ onSendToImprove, onSendToEvaluate }: {
               </div>
             )}
 
-            <div className="trend-actions">
-              <button className="btn-cta" style={{ height: 36, fontSize: 12.5 }} onClick={() => generateContent(t)}>
-                Сгенерировать контент
-              </button>
-              <button className="btn-secondary" onClick={() => onSendToEvaluate(`${t.title}. ${t.insight ?? ""}`)}>
-                Проверить →
-              </button>
-              <button className="btn-secondary" onClick={() => onSendToImprove(`${t.title}. ${t.insight ?? ""}`)}>
-                Улучшить →
-              </button>
-            </div>
-
-            {genFor === t.title && (
-              <div className="gen-card">
-                {!generated ? (
-                  <div style={{ fontSize: 13, color: "var(--t2)" }}>Генерируем черновик…</div>
-                ) : (
-                  <>
-                    <div className="gen-row"><strong>Заголовок:</strong> {generated.headline}</div>
-                    <div className="gen-row"><strong>Текст:</strong> {generated.body}</div>
-                    <div className="gen-row"><strong>CTA:</strong> {generated.cta}</div>
-                    <div className="gen-meta">Провайдер: {generated.provider} · {generated.latencyMs}ms</div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                      <button className="btn-secondary" onClick={() => onSendToEvaluate(`${generated.headline}\n\n${generated.body}`)}>
-                        Проверить →
-                      </button>
-                      <button className="btn-secondary" onClick={() => onSendToImprove(`${generated.headline}\n\n${generated.body}`)}>
-                        Улучшить →
-                      </button>
-                    </div>
-                  </>
-                )}
+            {brief && (
+              <div className="gen-card" style={{ marginTop: 14 }}>
+                <div className="tension-label" style={{ color: "var(--lime)", marginBottom: 6 }}>Бриф для маркетолога</div>
+                <div className="gen-row" style={{ whiteSpace: "pre-wrap", margin: 0 }}>{brief}</div>
               </div>
             )}
           </div>
@@ -658,7 +621,7 @@ function ImproveStep({ initialText, onStreaming }: {
   const [error, setError]         = useState("");
   const [copied, setCopied]       = useState(false);
   const [provider, setProvider]   = useState("gemini-2.5-flash");
-  const [prompt, setPrompt]       = useState("reduck/lead-magnet@1");
+  const [prompt, setPrompt]       = useState("reduck/brazil-warmth@1"); // Установили дефолтный новый пресет
   const abortRef                  = useRef<AbortController | null>(null);
   const outRef                    = useRef<HTMLDivElement>(null);
 
@@ -736,7 +699,11 @@ function ImproveStep({ initialText, onStreaming }: {
             <div className="field-label">Цель</div>
             <div className="sel-wrap">
               <select value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={isLoading}>
-                {Object.keys(REDUCK_PROMPT_MAP).map((k) => <option key={k} value={`reduck/${k}@1`}>{k}</option>)}
+                {Object.keys(REDUCK_PROMPT_MAP).map((k) => (
+                  <option key={k} value={`reduck/${k}@1`}>
+                    {REDUCK_PROMPT_MAP[k]?.label || k}
+                  </option>
+                ))}
               </select>
               <span className="sel-arrow">▾</span>
             </div>
