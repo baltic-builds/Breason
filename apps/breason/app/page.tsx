@@ -6,9 +6,9 @@ type Step = "search" | "evaluate" | "improve";
 type MarketKey = "brazil" | "poland" | "germany";
 
 const MARKETS: Record<MarketKey, { label: string; flag: string; hint: string }> = {
-  brazil:  { label: "Бразилия",  flag: "🇧🇷", hint: "Фокус на личных отношениях и открытости." },
-  poland:  { label: "Польша",    flag: "🇵🇱", hint: "Фокус на фактах и конкретных результатах." },
-  germany: { label: "Германия",  flag: "🇩🇪", hint: "Фокус на надежности и официальном стиле." },
+  brazil:  { label: "Бразилия",  flag: "🇧🇷", hint: "Фокус на отношениях и доверии." },
+  poland:  { label: "Польша",    flag: "🇵🇱", hint: "Фокус на фактах и результатах." },
+  germany: { label: "Германия",  flag: "🇩🇪", hint: "Фокус на надежности и стандартах." },
 };
 
 const STEPS: Step[] = ["search", "evaluate", "improve"];
@@ -37,13 +37,13 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
 .market-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
 .mkt-box { padding: 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; text-align: center; transition: 0.2s; background: #fff; }
 .mkt-box.active { border-color: var(--lime); background: rgba(132, 204, 22, 0.04); }
-.btn-cta { background: var(--orange); color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 14px; text-decoration: none; }
+.btn-cta { background: var(--orange); color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 14px; border: 1px solid transparent; width: auto; }
 .btn-cta:hover { opacity: 0.9; transform: translateY(-1px); }
 .btn-cta:disabled { background: var(--t3); cursor: not-allowed; }
 .inp { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-family: inherit; font-size: 14px; outline: none; margin-bottom: 12px; }
-.footer-info { margin-top: auto; padding-top: 20px; font-size: 11px; color: var(--t3); line-height: 1.6; }
-.score-badge { position: absolute; top: 24px; right: 24px; background: rgba(132, 204, 22, 0.1); color: var(--lime); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
 .analysis-box { background: #F1F5F9; padding: 16px; border-radius: 12px; margin: 16px 0; font-size: 13px; line-height: 1.6; border-left: 3px solid var(--orange); }
+.score-badge { position: absolute; top: 24px; right: 24px; background: rgba(132, 204, 22, 0.1); color: var(--lime); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+.footer-info { margin-top: auto; padding-top: 20px; font-size: 11px; color: var(--t3); line-height: 1.6; }
 `;
 
 export default function BreasonApp() {
@@ -56,7 +56,6 @@ export default function BreasonApp() {
   const [url, setUrl] = useState("");
   const [evalResult, setEvalResult] = useState("");
 
-  // 1. Поиск трендов (через GET как в оригинале)
   const loadTrends = async () => {
     setLoading(true);
     setTrends([]);
@@ -64,50 +63,52 @@ export default function BreasonApp() {
       const res = await fetch(`/api/resonance-trends?market=${market}`);
       const data = await res.json();
       if (data.trends) setTrends(data.trends);
-    } catch (e) {
-      console.error("Ошибка загрузки трендов:", e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  // 2. Узнать больше (Deep Dive)
   const handleDeepDive = async (title: string) => {
-    setDeepDive(prev => ({ ...prev, [title]: "Анализируем тренд через Gemini..." }));
+    setDeepDive(prev => ({ ...prev, [title]: "Загрузка аналитики..." }));
     try {
       const res = await fetch("/api/resonance-trends", {
         method: "POST",
         body: JSON.stringify({ action: "deep_dive", market, trendTitle: title }),
       });
       const data = await res.json();
-      if (data.analysis) setDeepDive(prev => ({ ...prev, [title]: data.analysis }));
-    } catch (e) {
-      setDeepDive(prev => ({ ...prev, [title]: "Ошибка при загрузке анализа." }));
-    }
+      setDeepDive(prev => ({ ...prev, [title]: data.analysis }));
+    } catch (e) { setDeepDive(prev => ({ ...prev, [title]: "Ошибка загрузки." })); }
   };
 
-  // 3. Проверить (Evaluate)
   const handleEvaluate = async () => {
     setLoading(true);
-    setEvalResult("Gemini проверяет ваш контент...");
+    setEvalResult("Gemini анализирует...");
     try {
       const res = await fetch("/api/resonance-trends", {
         method: "POST",
         body: JSON.stringify({ action: "evaluate", market, url, text }),
       });
       const data = await res.json();
-      if (data.result) setEvalResult(data.result);
-    } catch (e) {
-      setEvalResult("Ошибка при проверке.");
-    } finally {
-      setLoading(false);
-    }
-  }
+      setEvalResult(data.result);
+    } catch (e) { setEvalResult("Ошибка анализа."); }
+    finally { setLoading(false); }
+  };
+
+  const handleImprove = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/resonance-trends", {
+        method: "POST",
+        body: JSON.stringify({ action: "improve", market, text }),
+      });
+      const data = await res.json();
+      setText(data.improvedText);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
 
   return (
     <div className="shell">
       <style>{STYLE}</style>
-      
       <aside className="sidebar">
         <div className="logo"><div className="logo-icon">B</div> Breason</div>
         {STEPS.map((s, i) => (
@@ -115,9 +116,7 @@ export default function BreasonApp() {
             <span style={{ fontSize: 11, opacity: 0.5, width: 20 }}>0{i + 1}</span> {stepLabels[s]}
           </button>
         ))}
-        <div className="footer-info">
-          v 0.5.6<br/><span style={{ opacity: 0.5 }}>from pavel with love</span>
-        </div>
+        <div className="footer-info">v 0.5.7<br/><span style={{ opacity: 0.5 }}>from pavel with love</span></div>
       </aside>
 
       <main className="main">
@@ -135,7 +134,6 @@ export default function BreasonApp() {
                 <div key={k} className={`mkt-box ${market === k ? 'active' : ''}`} onClick={() => { setMarket(k); setTrends([]); }}>
                   <div style={{ fontSize: '20px' }}>{MARKETS[k].flag}</div>
                   <div style={{ fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>{MARKETS[k].label}</div>
-                  <div style={{ fontSize: '10px', color: 'var(--t3)', marginTop: '4px', lineHeight: 1.3 }}>{MARKETS[k].hint}</div>
                 </div>
               ))}
             </div>
@@ -143,63 +141,43 @@ export default function BreasonApp() {
 
           {step === "search" && (
             <div className="step-ui">
-              <button className="btn-cta" style={{ width: 'auto', marginBottom: 24 }} onClick={loadTrends} disabled={loading}>
-                {loading ? "Поиск..." : "Найти тренды региона"}
+              <button className="btn-cta" onClick={loadTrends} disabled={loading}>
+                {loading ? "Анализ..." : "Найти тренды региона"}
               </button>
-
               {trends.map((t, i) => (
-                <div className="card" key={i} style={{ borderLeft: '4px solid var(--lime)' }}>
-                  <div className="score-badge">{t.resonance_score || 0}% резонанса</div>
-                  <h2 style={{ fontSize: 18, marginBottom: 8, paddingRight: 100 }}>{t.trend_name}</h2>
-                  <p style={{ color: 'var(--violet)', fontWeight: 700, marginBottom: 16, fontSize: 15 }}>{t.narrative_hook}</p>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-                    <div>
-                      <label className="field-label">Напряжение рынка</label>
-                      <p style={{ fontSize: 13, color: 'var(--t2)' }}>{t.market_tension}</p>
-                    </div>
-                    <div>
-                      <label className="field-label">Актуальность</label>
-                      <p style={{ fontSize: 13, color: 'var(--t2)' }}>{t.why_now}</p>
-                    </div>
+                <div className="card" key={i} style={{ borderLeft: '4px solid var(--lime)', marginTop: 24 }}>
+                  <div className="score-badge">{t.resonance_score}%</div>
+                  <h2 style={{ fontSize: 18, marginBottom: 8 }}>{t.trend_name}</h2>
+                  <p style={{ color: 'var(--violet)', fontWeight: 700, marginBottom: 12 }}>{t.narrative_hook}</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                    <div><label className="field-label">Проблема</label><p style={{ fontSize: 13 }}>{t.market_tension}</p></div>
+                    <div><label className="field-label">Актуальность</label><p style={{ fontSize: 13 }}>{t.why_now}</p></div>
                   </div>
-
                   {deepDive[t.trend_name] && <div className="analysis-box">{deepDive[t.trend_name]}</div>}
-
-                  <button className="btn-cta" style={{ width: 'auto', padding: '10px 20px', height: 'auto', fontSize: 12 }} onClick={() => handleDeepDive(t.trend_name)}>
-                    Узнать больше
-                  </button>
+                  <button className="btn-cta" style={{ marginTop: 16, padding: '8px 16px', fontSize: 12 }} onClick={() => handleDeepDive(t.trend_name)}>Узнать больше</button>
                 </div>
               ))}
             </div>
           )}
 
           {step === "evaluate" && (
-            <div className="step-ui">
-              <div className="card">
-                <label className="field-label">Проверка контента (URL или текст)</label>
-                <input className="inp" placeholder="https://example.com/post" value={url} onChange={e => setUrl(e.target.value)} />
-                <textarea className="inp" rows={8} value={text} onChange={e => setText(e.target.value)} placeholder="Или вставьте текст для анализа..." />
-                
-                {evalResult && <div className="analysis-box" style={{ borderLeftColor: 'var(--violet)' }}>{evalResult}</div>}
-                
-                <button className="btn-cta" style={{ width: 'auto' }} onClick={handleEvaluate} disabled={loading}>
-                  {loading ? "Анализ..." : "Проверить"}
-                </button>
-              </div>
+            <div className="card">
+              <label className="field-label">Проверить контент</label>
+              <input className="inp" placeholder="https://..." value={url} onChange={e => setUrl(e.target.value)} />
+              <textarea className="inp" rows={6} value={text} onChange={e => setText(e.target.value)} placeholder="Или текст..." />
+              {evalResult && <div className="analysis-box">{evalResult}</div>}
+              <button className="btn-cta" onClick={handleEvaluate} disabled={loading}>Проверить</button>
             </div>
           )}
 
           {step === "improve" && (
             <div className="card">
-               <label className="field-label">Улучшение и адаптация</label>
-               <textarea className="inp" rows={15} value={text} onChange={e => setText(e.target.value)} placeholder="Вставьте текст для улучшения..." />
-               <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-                 <button className="btn-cta" style={{ width: 'auto' }}>Улучшить</button>
-                 <button className="btn-cta" style={{ background: 'var(--bg)', color: 'var(--t1)', border: '1px solid var(--border)', width: 'auto' }} onClick={() => { navigator.clipboard.writeText(text); }}>
-                   Копировать
-                 </button>
-               </div>
+              <label className="field-label">Улучшить текст</label>
+              <textarea className="inp" rows={12} value={text} onChange={e => setText(e.target.value)} />
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button className="btn-cta" onClick={handleImprove} disabled={loading}>Улучшить</button>
+                <button className="btn-cta" style={{ background: 'var(--bg)', color: 'var(--t1)', border: '1px solid var(--border)' }} onClick={() => navigator.clipboard.writeText(text)}>Копировать</button>
+              </div>
             </div>
           )}
         </div>
