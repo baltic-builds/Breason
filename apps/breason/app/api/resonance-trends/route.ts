@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// 1. ОТКЛЮЧАЕМ КЭШИРОВАНИЕ (Критично для Next.js App Router на Vercel)
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Максимальное время выполнения функции
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function GET(request: Request) {
@@ -15,10 +19,10 @@ export async function GET(request: Request) {
 
   const targetMarket = marketNames[market] || market;
   
-  // Промпт с жестким требованием к структуре
-  const systemPrompt = `Ты эксперт по B2B трендам в ${targetMarket}. Сегодня апрель 2026 года.
-    Найди 3 свежих тренда за последние 90 дней.
-    ОТВЕТЬ СТРОГО В JSON (без лишних слов и разметки):
+  // Промпт (убрал "Апрель 2026", чтобы ИИ не галлюцинировал, лучше "Текущий месяц")
+  const systemPrompt = `Ты эксперт по B2B трендам в ${targetMarket}. Сегодня текущий месяц.
+    Найди 3 свежих бизнес-тренда за последние 90 дней.
+    ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON. Структура должна быть такой:
     {
       "trends": [
         {
@@ -32,46 +36,75 @@ export async function GET(request: Request) {
     }`;
 
   try {
-    // Используем стабильную модель 1.5 Flash для поиска
+    // === ШАГ 1: ОСНОВНОЙ ДВИЖОК (GEMINI) ===
     const model = genAI.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      // Временно отключаем поиск, если он вызывает 500, 
-      // либо используем правильный синтаксис:
-      tools: [{ googleSearch: {} }] 
-    } as any);
+      generationConfig: {
+        // Принудительно заставляем ИИ отдавать чистый JSON (без маркдауна)
+        responseMimeType: "application/json", 
+      }
+      // ВАЖНО: googleSearch убран, так как он вызывает 500 ошибку на бесплатных ключах
+    });
 
     const result = await model.generateContent(systemPrompt);
     const responseText = result.response.text();
     
-    // Очистка от маркдауна ```json ... ```
-    const cleanJson = responseText.replace(/```json|```/g, "").trim();
+    return NextResponse.json(JSON.parse(responseText));
+
+  } catch (geminiError: any) {
+    console.warn("⚠️ Gemini Error:", geminiError.message);
     
-    return NextResponse.json(JSON.parse(cleanJson));
-  } catch (err: any) {
-    console.error("Gemini Error:", err);
-    
-    // Fallback на случай ошибки Gemini - возвращаем заглушку, чтобы фронт не падал
+    // === ШАГ 2: ФОЛЛБЭК НА GROQ (Если Gemini упал или заблокирован) ===
+    if (process.env.GROQ_API_KEY) {
+      try {
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [{ role: 'user', content: systemPrompt }],
+            response_format: { type: "json_object" }
+          }),
+        });
+
+        if (groqRes.ok) {
+          const groqData = await groqRes.json();
+          return NextResponse.json(JSON.parse(groqData.choices[0].message.content));
+        }
+      } catch (groqError) {
+        console.error("❌ Groq Error:", groqError);
+      }
+    }
+
+    // === ШАГ 3: БЕЗОПАСНАЯ ЗАГЛУШКА ===
+    // Если упали обе нейросети, возвращаем статус 200, но с сообщением об ошибке в самом тренде,
+    // чтобы UI отрисовал карточку ошибки, а не ломался с белым экраном.
     return NextResponse.json({ 
       trends: [
         {
-          trend_name: "Ошибка получения данных",
-          narrative_hook: "Сервис временно недоступен",
-          market_tension: "Проверьте API ключ или настройки провайдера",
-          why_now: "Ошибка 500",
+          trend_name: "Ошибка подключения к ИИ",
+          narrative_hook: "Провайдеры временно недоступны или исчерпаны лимиты.",
+          market_tension: `Техническая ошибка: ${geminiError.message || "500 Internal"}`,
+          why_now: "Проверьте API-ключи в настройках Vercel.",
           resonance_score: 0
         }
       ] 
-    }, { status: 200 }); // Возвращаем 200 с ошибкой внутри, чтобы UI обработал это красиво
+    }, { status: 200 });
   }
 }
 
-// Не забудь добавить POST для других действий (Deep Dive и т.д.)
+// Заглушка для будущих действий (Evaluate, Improve)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    // Тут твоя логика для deep_dive, evaluate, improve
-    return NextResponse.json({ success: true });
+    const { action } = body;
+    
+    // В будущем здесь будет switch(action) для вызова разных промптов
+    return NextResponse.json({ success: true, action_received: action });
   } catch (e) {
-    return NextResponse.json({ error: "Post failed" }, { status: 500 });
+    return NextResponse.json({ error: "Invalid POST body" }, { status: 400 });
   }
 }
