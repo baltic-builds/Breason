@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 
 type Step = "search" | "evaluate" | "improve";
 type MarketKey = "brazil" | "poland" | "germany";
@@ -41,7 +41,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
 .mkt-box { padding: 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; text-align: center; transition: 0.2s; background: #fff; }
 .mkt-box:hover { border-color: var(--t3); }
 .mkt-box.active { border-color: var(--lime); background: rgba(132, 204, 22, 0.04); }
-.btn-cta { background: var(--orange); color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 14px; border: 1px solid transparent; }
+.btn-cta { background: var(--orange); color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 14px; border: 1px solid transparent; text-decoration: none; }
 .btn-cta:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2); }
 .btn-cta:disabled { background: var(--t3); cursor: not-allowed; transform: none; box-shadow: none; }
 .inp { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-family: inherit; font-size: 14px; outline: none; transition: 0.2s; }
@@ -56,27 +56,23 @@ export default function BreasonApp() {
   const [market, setMarket] = useState<MarketKey>("brazil");
   const [loading, setLoading] = useState(false);
   
-  // Data states
   const [trends, setTrends] = useState<any[]>([]);
   const [deepDive, setDeepDive] = useState<Record<string, string>>({});
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
-  const [analysis, setAnalysis] = useState("");
 
-  /* ─── Handlers ─── */
   const findTrends = async () => {
     setLoading(true);
     setTrends([]);
     try {
-      // Имитация API запроса
       await new Promise(r => setTimeout(r, 1000));
       setTrends([
         { 
           id: 1,
           title: "Цифровизация в отрасли сельского хозяйства", 
-          desc: "Повышение эффективности и производительности в сельском хозяйстве за счет внедрения технологий",
-          conflict: "Неэффективное использование ресурсов и низкая производительность",
-          why: "Государственные инициативы по поддержке цифровизации"
+          desc: "Повышение эффективности и производительности за счет внедрения технологий",
+          conflict: "Неэффективное использование ресурсов",
+          why: "Государственные субсидии"
         }
       ]);
     } finally { setLoading(false); }
@@ -87,7 +83,7 @@ export default function BreasonApp() {
     await new Promise(r => setTimeout(r, 800));
     setDeepDive(prev => ({ 
       ...prev, 
-      [title]: `Для рынка ${MARKETS[market].label} этот тренд критичен из-за роста стоимости удобрений на 15%. Местные компании ищут решения для точного земледелия.` 
+      [title]: `Инсайт для региона ${MARKETS[market].label}: Компании активно переходят на системы мониторинга в реальном времени.` 
     }));
   };
 
@@ -95,7 +91,7 @@ export default function BreasonApp() {
     if (!url) return;
     setLoading(true);
     await new Promise(r => setTimeout(r, 1200));
-    setText("Извлеченный текст из " + url + ": Традиционные методы ведения хозяйства в регионе требуют пересмотра...");
+    setText("Контент извлечен из " + url + ". Готов к анализу.");
     setLoading(false);
   };
 
@@ -115,7 +111,7 @@ export default function BreasonApp() {
         ))}
 
         <div className="footer-info">
-          v 0.5.2<br/>
+          v 0.5.3<br/>
           <span style={{ opacity: 0.5 }}>from pavel with love</span>
         </div>
       </aside>
@@ -130,9 +126,8 @@ export default function BreasonApp() {
         </header>
 
         <div className="content">
-          {/* Market Selector - Always visible for context */}
           <div className="card">
-            <label className="field-label">Выбор региона</label>
+            <label className="field-label">Целевой регион</label>
             <div className="market-grid">
               {(Object.keys(MARKETS) as MarketKey[]).map(k => (
                 <div key={k} className={`mkt-box ${market === k ? 'active' : ''}`} onClick={() => setMarket(k)}>
@@ -144,34 +139,20 @@ export default function BreasonApp() {
             </div>
           </div>
 
-          {/* STEP 1: SEARCH */}
           {step === "search" && (
             <div className="step-ui">
-              <div style={{ marginBottom: 24 }}>
-                <button className="btn-cta" style={{ width: 'auto' }} onClick={findTrends} disabled={loading}>
-                  {loading ? "Поиск..." : "Найти тренды региона"}
-                </button>
-              </div>
+              <button className="btn-cta" style={{ width: 'auto', marginBottom: 24 }} onClick={findTrends} disabled={loading}>
+                {loading ? "Поиск..." : "Найти тренды региона"}
+              </button>
 
               {trends.map((t) => (
                 <div className="card trend-card" key={t.id}>
                   <h2 style={{ fontSize: 18, marginBottom: 12 }}>{t.title}</h2>
-                  <p style={{ color: 'var(--t2)', fontSize: 15, marginBottom: 16 }}>«{t.desc}»</p>
+                  <p style={{ color: 'var(--t2)', fontSize: 15, marginBottom: 16 }}>{t.desc}</p>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-                    <div>
-                      <label className="field-label">Конфликт</label>
-                      <div style={{ fontSize: 13 }}>{t.conflict}</div>
-                    </div>
-                    <div>
-                      <label className="field-label">Почему сейчас</label>
-                      <div style={{ fontSize: 13 }}>{t.why}</div>
-                    </div>
-                  </div>
-
                   {deepDive[t.title] && (
                     <div className="analysis-box">
-                      <strong>Инсайт:</strong> {deepDive[t.title]}
+                      {deepDive[t.title]}
                     </div>
                   )}
 
@@ -185,42 +166,40 @@ export default function BreasonApp() {
             </div>
           )}
 
-          {/* STEP 2: EVALUATE */}
           {step === "evaluate" && (
             <div className="step-ui">
               <div className="card">
                 <label className="field-label">Парсинг контента</label>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <input className="inp" placeholder="Вставьте URL статьи или поста..." value={url} onChange={e => setUrl(e.target.value)} />
+                  <input className="inp" placeholder="Вставьте URL статьи..." value={url} onChange={e => setUrl(e.target.value)} />
                   <button className="btn-cta" style={{ width: 120 }} onClick={handleParse} disabled={loading}>
-                    {loading ? "..." : "Парсить"}
+                    Парсить
                   </button>
                 </div>
               </div>
 
               <div className="card">
-                <label className="field-label">Текст для проверки локализации</label>
+                <label className="field-label">Текст для проверки</label>
                 <textarea 
                   className="inp" 
                   rows={10} 
                   style={{ resize: 'none', marginBottom: 20 }} 
                   value={text} 
                   onChange={e => setText(e.target.value)}
-                  placeholder="Введите текст вручную или используйте парсинг..."
+                  placeholder="Текст для адаптации..."
                 />
                 <button className="btn-cta" onClick={() => setStep("improve")} disabled={!text}>
-                  Перейти к улучшению
+                  К улучшению
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 3: IMPROVE */}
           {step === "improve" && (
             <div className="step-ui">
               <div className="card" style={{ background: 'var(--violet)', color: '#fff', border: 'none' }}>
                 <h2 style={{ fontFamily: 'Syne', marginBottom: 8 }}>Улучшение</h2>
-                <p style={{ opacity: 0.9, fontSize: 14 }}>Адаптация под менталитет: {MARKETS[market].label}</p>
+                <p style={{ opacity: 0.9, fontSize: 14 }}>Адаптация: {MARKETS[market].label}</p>
               </div>
               
               <div className="card">
@@ -228,7 +207,8 @@ export default function BreasonApp() {
                 <textarea className="inp" rows={15} value={text} onChange={e => setText(e.target.value)} />
                 <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
                   <button className="btn-cta">Применить магию ИИ</button>
-                  <button className="btn-cta" style={{ background: 'var(--bg)', color: var('--t1'), border: '1px solid var(--border)' }}>
+                  {/* ИСПРАВЛЕНО: Кавычки вокруг переменных 'var(...)' */}
+                  <button className="btn-cta" style={{ background: 'var(--bg)', color: 'var(--t1)', border: '1px solid var(--border)' }}>
                     Копировать
                   </button>
                 </div>
