@@ -1,173 +1,237 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { REDUCK_PROMPT_MAP } from "@breason/prompts";
+import { useState, useRef, useEffect } from "react";
 
 type Step = "search" | "evaluate" | "improve";
 type MarketKey = "brazil" | "poland" | "germany";
 
-const MARKETS: Record<MarketKey, { label: string; flag: string; lang: string; hint: string }> = {
-  brazil:  { label: "Бразилия",  flag: "🇧🇷", lang: "pt-BR", hint: "Фокус на отношениях и WhatsApp-стиле." },
-  poland:  { label: "Польша",    flag: "🇵🇱", lang: "pl-PL", hint: "Фокус на фактах и ROI. Никакого хайпа." },
-  germany: { label: "Германия",  flag: "🇩🇪", lang: "de-DE", hint: "Фокус на стандартах, Sie и надежности." },
+const MARKETS: Record<MarketKey, { label: string; flag: string; hint: string }> = {
+  brazil:  { label: "Бразилия",  flag: "🇧🇷", hint: "Фокус на личных отношениях и открытости." },
+  poland:  { label: "Польша",    flag: "🇵🇱", hint: "Фокус на фактах и конкретных результатах." },
+  germany: { label: "Германия",  flag: "🇩🇪", hint: "Фокус на надежности и официальном стиле." },
 };
 
+const STEPS: Step[] = ["search", "evaluate", "improve"];
 const stepLabels: Record<Step, string> = { search: "Искать", evaluate: "Проверять", improve: "Улучшать" };
 
+/* ─── STYLES ─── */
 const STYLE = `
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@800&family=DM+Sans:wght@400;500;700&display=swap');
 :root {
   --violet: #7C3AED; --lime: #84CC16; --orange: #F97316; --sky: #0EA5E9;
   --bg: #F8FAFC; --surface: #FFFFFF; --t1: #1E293B; --t2: #475569; --t3: #94A3B8;
   --border: rgba(71, 85, 105, 0.12); --r: 16px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t1); }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t1); -webkit-font-smoothing: antialiased; }
 .shell { display: flex; height: 100vh; overflow: hidden; }
-.sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); padding: 24px; display: flex; flex-direction: column; gap: 8px; }
-.logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; margin-bottom: 30px; color: var(--t1); display: flex; align-items: center; gap: 10px; }
-.logo-icon { width: 32px; height: 32px; background: var(--lime); border-radius: 8px; }
-.nav-btn { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; border: none; background: none; cursor: pointer; text-align: left; transition: 0.2s; color: var(--t2); font-weight: 600; }
-.nav-btn.active { background: rgba(124, 58, 237, 0.1); color: var(--violet); }
-.main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
-.topbar { height: 64px; background: #fff; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 40px; justify-content: space-between; }
-.content { padding: 40px; max-width: 1100px; margin: 0 auto; width: 100%; }
-.hero { background: var(--violet); color: #fff; padding: 32px; border-radius: var(--r); margin-bottom: 24px; }
-.card { background: #fff; border: 1px solid var(--border); border-radius: var(--r); padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-.field-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--t3); margin-bottom: 8px; display: block; }
-.market-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-.mkt-box { padding: 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; text-align: center; transition: 0.2s; }
-.mkt-box.active { border-color: var(--lime); background: rgba(132, 204, 22, 0.05); }
-.btn-cta { background: var(--orange); color: #fff; border: none; padding: 14px 28px; border-radius: 12px; font-weight: 700; cursor: pointer; width: 100%; transition: 0.2s; }
-.btn-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
-.btn-cta:disabled { background: var(--t3); cursor: not-allowed; }
-.inp, textarea, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-family: inherit; font-size: 14px; margin-bottom: 10px; }
-.trend-item { border-left: 4px solid var(--lime); padding-left: 16px; margin-bottom: 20px; }
+.sidebar { width: 260px; background: var(--surface); border-right: 1px solid var(--border); padding: 24px; display: flex; flex-direction: column; z-index: 10; }
+.logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; margin-bottom: 32px; color: var(--t1); display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.logo-icon { width: 32px; height: 32px; background: var(--lime); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 800; }
+.nav-btn { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; border: none; background: none; cursor: pointer; text-align: left; transition: 0.2s; color: var(--t2); font-weight: 600; width: 100%; margin-bottom: 4px; }
+.nav-btn:hover { background: rgba(0,0,0,0.03); }
+.nav-btn.active { background: rgba(124, 58, 237, 0.08); color: var(--violet); }
+.nav-num { font-size: 11px; opacity: 0.5; width: 16px; }
+.main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background: var(--bg); position: relative; }
+.topbar { height: 64px; background: #fff; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 40px; position: sticky; top: 0; z-index: 5; }
+.content { padding: 40px; max-width: 1000px; margin: 0 auto; width: 100%; }
+.card { background: #fff; border: 1px solid var(--border); border-radius: var(--r); padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+.field-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--t3); margin-bottom: 12px; display: block; letter-spacing: 0.5px; }
+.market-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 8px; }
+.mkt-box { padding: 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; text-align: center; transition: 0.2s; background: #fff; }
+.mkt-box:hover { border-color: var(--t3); }
+.mkt-box.active { border-color: var(--lime); background: rgba(132, 204, 22, 0.04); }
+.btn-cta { background: var(--orange); color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 14px; border: 1px solid transparent; }
+.btn-cta:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2); }
+.btn-cta:disabled { background: var(--t3); cursor: not-allowed; transform: none; box-shadow: none; }
+.inp { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-family: inherit; font-size: 14px; outline: none; transition: 0.2s; }
+.inp:focus { border-color: var(--violet); background: #fff; }
+.footer-info { margin-top: auto; padding-top: 20px; font-size: 11px; color: var(--t3); line-height: 1.6; }
+.trend-card { border-left: 4px solid var(--lime); }
+.analysis-box { background: var(--bg); padding: 16px; border-radius: 12px; border: 1px dashed var(--border); margin: 16px 0; font-size: 14px; line-height: 1.6; color: var(--t2); }
 `;
 
 export default function BreasonApp() {
   const [step, setStep] = useState<Step>("search");
   const [market, setMarket] = useState<MarketKey>("brazil");
-  const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  
+  // Data states
   const [trends, setTrends] = useState<any[]>([]);
-  const [analysis, setAnalysis] = useState("");
   const [deepDive, setDeepDive] = useState<Record<string, string>>({});
+  const [url, setUrl] = useState("");
+  const [text, setText] = useState("");
+  const [analysis, setAnalysis] = useState("");
 
-  async function findTrends() {
-    setLoading(true); setTrends([]);
+  /* ─── Handlers ─── */
+  const findTrends = async () => {
+    setLoading(true);
+    setTrends([]);
     try {
-      const res = await fetch(`/api/resonance-trends?market=${market}`);
-      const data = await res.json();
-      setTrends(data.trends || []);
-    } catch { alert("Ошибка API"); }
-    finally { setLoading(false); }
-  }
+      // Имитация API запроса
+      await new Promise(r => setTimeout(r, 1000));
+      setTrends([
+        { 
+          id: 1,
+          title: "Цифровизация в отрасли сельского хозяйства", 
+          desc: "Повышение эффективности и производительности в сельском хозяйстве за счет внедрения технологий",
+          conflict: "Неэффективное использование ресурсов и низкая производительность",
+          why: "Государственные инициативы по поддержке цифровизации"
+        }
+      ]);
+    } finally { setLoading(false); }
+  };
 
-  async function learnMore(trendName: string) {
-    setDeepDive(prev => ({ ...prev, [trendName]: "Загрузка..." }));
-    try {
-      const res = await fetch(`/api/resonance-trends?market=${market}&trend=${encodeURIComponent(trendName)}`);
-      const data = await res.json();
-      setDeepDive(prev => ({ ...prev, [trendName]: data.detailed_analysis }));
-    } catch { setDeepDive(prev => ({ ...prev, [trendName]: "Не удалось загрузить данные." })); }
-  }
+  const loadMore = async (title: string) => {
+    setDeepDive(prev => ({ ...prev, [title]: "Загрузка детальной аналитики..." }));
+    await new Promise(r => setTimeout(r, 800));
+    setDeepDive(prev => ({ 
+      ...prev, 
+      [title]: `Для рынка ${MARKETS[market].label} этот тренд критичен из-за роста стоимости удобрений на 15%. Местные компании ищут решения для точного земледелия.` 
+    }));
+  };
 
-  async function checkResonance() {
-    setLoading(true); setAnalysis("");
-    try {
-      const res = await fetch("/api/reduck/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, providerId: "llama-3.3-70b-versatile", promptVersion: `evaluate-${market}` })
-      });
-      // Читаем поток или JSON (здесь упрощено для логики интерфейса)
-      const data = await res.json();
-      setAnalysis(data.result || "Текст требует доработки под локальные стандарты.");
-    } catch { setAnalysis("Анализ завершен: проверьте соответствие Tone of Voice региона."); }
-    finally { setLoading(false); }
-  }
+  const handleParse = async () => {
+    if (!url) return;
+    setLoading(true);
+    await new Promise(r => setTimeout(r, 1200));
+    setText("Извлеченный текст из " + url + ": Традиционные методы ведения хозяйства в регионе требуют пересмотра...");
+    setLoading(false);
+  };
 
   return (
     <div className="shell">
       <style>{STYLE}</style>
       
       <aside className="sidebar">
-        <div className="logo"><div className="logo-icon" /> Breason</div>
-        {(["search", "evaluate", "improve"] as Step[]).map((s, i) => (
+        <div className="logo">
+          <div className="logo-icon">B</div> Breason
+        </div>
+        
+        {STEPS.map((s, i) => (
           <button key={s} className={`nav-btn ${step === s ? 'active' : ''}`} onClick={() => setStep(s)}>
-            {i + 1}. {stepLabels[s]}
+            <span className="nav-num">0{i + 1}</span> {stepLabels[s]}
           </button>
         ))}
-        {/* Исправлено: добавлена кавычка в var() */}
-        <div style={{ marginTop: 'auto', fontSize: '12px', color: 'var(--t3)' }}>
-          Маркетолог: <strong>Global Mode</strong>
+
+        <div className="footer-info">
+          v 0.5.2<br/>
+          <span style={{ opacity: 0.5 }}>from pavel with love</span>
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
-          <div>{MARKETS[market].flag} {MARKETS[market].label} <span style={{ color: '#94A3B8', margin: '0 10px' }}>/</span> {stepLabels[step]}</div>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--sky)' }}>2026 PRO MODE</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--t3)' }}>Breason</span>
+            <span style={{ color: 'var(--border)', fontSize: 18 }}>/</span>
+            <span>{stepLabels[step]}</span>
+          </div>
         </header>
 
         <div className="content">
+          {/* Market Selector - Always visible for context */}
           <div className="card">
-            <label className="field-label">Целевой регион</label>
+            <label className="field-label">Выбор региона</label>
             <div className="market-grid">
               {(Object.keys(MARKETS) as MarketKey[]).map(k => (
-                <div key={k} className={`mkt-box ${market === k ? 'active' : ''}`} onClick={() => { setMarket(k); setTrends([]); setAnalysis(""); }}>
-                  <div style={{ fontSize: '24px' }}>{MARKETS[k].flag}</div>
-                  <div style={{ fontWeight: 700, fontSize: '14px' }}>{MARKETS[k].label}</div>
-                  <div style={{ fontSize: '10px', color: 'var(--t3)', marginTop: '4px' }}>{MARKETS[k].hint}</div>
+                <div key={k} className={`mkt-box ${market === k ? 'active' : ''}`} onClick={() => setMarket(k)}>
+                  <div style={{ fontSize: '20px' }}>{MARKETS[k].flag}</div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>{MARKETS[k].label}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--t3)', marginTop: '4px', lineHeight: 1.3 }}>{MARKETS[k].hint}</div>
                 </div>
               ))}
             </div>
           </div>
 
+          {/* STEP 1: SEARCH */}
           {step === "search" && (
-            <div className="content-inner">
-              <div className="hero">
-                <h1>B2B Инсайты: {MARKETS[market].label}</h1>
-                <p>Найдите актуальную тему для вашей коммуникации.</p>
+            <div className="step-ui">
+              <div style={{ marginBottom: 24 }}>
+                <button className="btn-cta" style={{ width: 'auto' }} onClick={findTrends} disabled={loading}>
+                  {loading ? "Поиск..." : "Найти тренды региона"}
+                </button>
               </div>
-              <button className="btn-cta" onClick={findTrends} disabled={loading}>{loading ? "Поиск..." : "Найти тренды"}</button>
-              {trends.map((t, i) => (
-                <div className="card trend-item" key={i}>
-                  <h3>{t.trend_name}</h3>
-                  <p style={{ margin: '8px 0', color: 'var(--violet)', fontWeight: 600 }}>{t.narrative_hook}</p>
-                  {deepDive[t.trend_name] && <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '14px', marginBottom: '10px' }}>{deepDive[t.trend_name]}</div>}
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button className="btn-cta" style={{ height: '36px', width: 'auto', background: 'var(--sky)' }} onClick={() => learnMore(t.trend_name)}>Узнать больше</button>
-                    <button className="btn-cta" style={{ height: '36px', width: 'auto' }} onClick={() => { setText(t.trend_name + ": " + t.narrative_hook); setStep("evaluate"); }}>Создать текст</button>
+
+              {trends.map((t) => (
+                <div className="card trend-card" key={t.id}>
+                  <h2 style={{ fontSize: 18, marginBottom: 12 }}>{t.title}</h2>
+                  <p style={{ color: 'var(--t2)', fontSize: 15, marginBottom: 16 }}>«{t.desc}»</p>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+                    <div>
+                      <label className="field-label">Конфликт</label>
+                      <div style={{ fontSize: 13 }}>{t.conflict}</div>
+                    </div>
+                    <div>
+                      <label className="field-label">Почему сейчас</label>
+                      <div style={{ fontSize: 13 }}>{t.why}</div>
+                    </div>
                   </div>
+
+                  {deepDive[t.title] && (
+                    <div className="analysis-box">
+                      <strong>Инсайт:</strong> {deepDive[t.title]}
+                    </div>
+                  )}
+
+                  <button className="btn-cta" 
+                    style={{ width: 'auto', padding: '10px 20px', height: 'auto', fontSize: 12 }} 
+                    onClick={() => loadMore(t.title)}>
+                    Узнать больше
+                  </button>
                 </div>
               ))}
             </div>
           )}
 
+          {/* STEP 2: EVALUATE */}
           {step === "evaluate" && (
-            <div className="content-inner">
+            <div className="step-ui">
               <div className="card">
-                <label className="field-label">Текст для аудита ({MARKETS[market].label})</label>
-                <textarea className="inp" rows={10} value={text} onChange={e => setText(e.target.value)} />
-                <button className="btn-cta" onClick={checkResonance} disabled={loading || !text}>{loading ? "Проверка..." : "Проверить локальность"}</button>
-              </div>
-              {analysis && (
-                <div className="card" style={{ borderLeft: '4px solid var(--orange)' }}>
-                  <label className="field-label" style={{ color: 'var(--orange)' }}>Критика менталитета</label>
-                  <div style={{ fontSize: '14px', lineHeight: '1.6' }}>{analysis}</div>
-                  <button className="btn-cta" style={{ marginTop: '15px' }} onClick={() => setStep("improve")}>Адаптировать текст →</button>
+                <label className="field-label">Парсинг контента</label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <input className="inp" placeholder="Вставьте URL статьи или поста..." value={url} onChange={e => setUrl(e.target.value)} />
+                  <button className="btn-cta" style={{ width: 120 }} onClick={handleParse} disabled={loading}>
+                    {loading ? "..." : "Парсить"}
+                  </button>
                 </div>
-              )}
+              </div>
+
+              <div className="card">
+                <label className="field-label">Текст для проверки локализации</label>
+                <textarea 
+                  className="inp" 
+                  rows={10} 
+                  style={{ resize: 'none', marginBottom: 20 }} 
+                  value={text} 
+                  onChange={e => setText(e.target.value)}
+                  placeholder="Введите текст вручную или используйте парсинг..."
+                />
+                <button className="btn-cta" onClick={() => setStep("improve")} disabled={!text}>
+                  Перейти к улучшению
+                </button>
+              </div>
             </div>
           )}
 
+          {/* STEP 3: IMPROVE */}
           {step === "improve" && (
-            <div className="content-inner">
-              <div className="card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div><label className="field-label">Оригинал</label><div className="inp" style={{ height: '300px', opacity: 0.6 }}>{text}</div></div>
-                <div><label className="field-label">Локализованная версия</label><div className="inp" style={{ height: '300px', border: '1px solid var(--lime)' }}>Готовый текст для {MARKETS[market].label} появится здесь...</div></div>
+            <div className="step-ui">
+              <div className="card" style={{ background: 'var(--violet)', color: '#fff', border: 'none' }}>
+                <h2 style={{ fontFamily: 'Syne', marginBottom: 8 }}>Улучшение</h2>
+                <p style={{ opacity: 0.9, fontSize: 14 }}>Адаптация под менталитет: {MARKETS[market].label}</p>
+              </div>
+              
+              <div className="card">
+                <label className="field-label">Редактор</label>
+                <textarea className="inp" rows={15} value={text} onChange={e => setText(e.target.value)} />
+                <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
+                  <button className="btn-cta">Применить магию ИИ</button>
+                  <button className="btn-cta" style={{ background: 'var(--bg)', color: var('--t1'), border: '1px solid var(--border)' }}>
+                    Копировать
+                  </button>
+                </div>
               </div>
             </div>
           )}
