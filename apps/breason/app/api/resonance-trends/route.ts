@@ -5,33 +5,36 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const MODELS = {
-  GEMINI: process.env.GEMINI_MODEL || "gemini-2.0-flash",
-  GROQ: "llama-3.3-70b-versatile",
-  OPENROUTER: "google/gemini-2.0-flash-lite-preview-02-05:free"
+  GEMINI:      process.env.GEMINI_MODEL || "gemini-2.0-flash",
+  GROQ:        "llama-3.3-70b-versatile",
+  OPENROUTER:  "google/gemini-2.0-flash-lite-preview-02-05:free"
 };
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// ── Утилита: вытащить JSON из любого ответа ──────────────────────────────────
+// ── Утилита парсинга JSON ────────────────────────────────────────────────────
 function parseJson(text: string): any {
-  const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const clean = text
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
   const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("No JSON object found in response");
+  if (!match) throw new Error("No JSON object found in AI response");
   return JSON.parse(match[0]);
 }
 
 // ── OpenRouter fallback ──────────────────────────────────────────────────────
 async function openRouterFallback(prompt: string): Promise<any> {
-  if (!process.env.OPENROUTER_API_KEY) throw new Error("No OpenRouter key");
+  if (!process.env.OPENROUTER_API_KEY) throw new Error("No OPENROUTER_API_KEY");
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://breason.vercel.app",
+      "Content-Type":  "application/json",
+      "HTTP-Referer":  "https://breason.vercel.app",
     },
     body: JSON.stringify({
-      model: MODELS.OPENROUTER,
+      model:    MODELS.OPENROUTER,
       messages: [{ role: "user", content: prompt }]
     })
   });
@@ -41,18 +44,18 @@ async function openRouterFallback(prompt: string): Promise<any> {
 }
 
 // ── Groq fallback ────────────────────────────────────────────────────────────
-async function groqFallback(prompt: string, expectJson = true): Promise<string> {
-  if (!process.env.GROQ_API_KEY) throw new Error("No Groq key");
+async function groqFallback(prompt: string): Promise<string> {
+  if (!process.env.GROQ_API_KEY) throw new Error("No GROQ_API_KEY");
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-      "Content-Type": "application/json"
+      "Content-Type":  "application/json"
     },
     body: JSON.stringify({
-      model: MODELS.GROQ,
-      messages: [{ role: "user", content: prompt }],
-      ...(expectJson ? { response_format: { type: "json_object" } } : {})
+      model:           MODELS.GROQ,
+      messages:        [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" }
     })
   });
   if (!res.ok) throw new Error(`Groq ${res.status}`);
@@ -60,76 +63,114 @@ async function groqFallback(prompt: string, expectJson = true): Promise<string> 
   return data.choices[0].message.content;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// GET — Search: 3 тренда рынка
-// ════════════════════════════════════════════════════════════════════════════
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const market = searchParams.get('market') || 'germany';
-
-  const marketLabels: Record<string, string> = {
-    brazil:  "Бразилия (Brazil)",
-    poland:  "Польша (Poland)",
-    germany: "Германия (Germany)"
-  };
-  const targetMarket = marketLabels[market] || market;
-
-  const prompt = `
-Ты эксперт по B2B-трендам. Рынок: ${targetMarket}.
-Найди 3 актуальных B2B-тренда последних 90 дней.
-
-ОТВЕТЬ СТРОГО ВАЛИДНЫМ JSON БЕЗ РАЗМЕТКИ:
-{
-  "market": "${targetMarket}",
-  "trends": [
-    {
-      "trend_name": "Короткое название тренда",
-      "narrative_hook": "Одно предложение — инсайт или провокационный факт",
-      "market_tension": "Ключевая боль или противоречие на рынке",
-      "why_now": "Почему тренд актуален именно сейчас",
-      "resonance_score": 87
-    }
-  ]
-}
-Весь текст на русском. resonance_score от 0 до 100.
-  `.trim();
-
-  // Попытка 1: Gemini (без googleSearch — стабильнее на free tier)
+// ── Универсальный вызов ИИ (Gemini → Groq → OpenRouter) ─────────────────────
+async function callAI(prompt: string): Promise<any> {
+  // Попытка 1: Gemini
   try {
-    console.log(`🤖 GET trends via Gemini: ${MODELS.GEMINI}`);
+    console.log(`🤖 Gemini: ${MODELS.GEMINI}`);
     const model = genAI.getGenerativeModel({
-      model: MODELS.GEMINI,
+      model:            MODELS.GEMINI,
       generationConfig: { responseMimeType: "application/json" }
     });
     const result = await model.generateContent(prompt);
-    return NextResponse.json(parseJson(result.response.text()));
+    return parseJson(result.response.text());
   } catch (e: any) {
-    console.warn("⚠️ Gemini GET failed:", e.message);
+    console.warn(`⚠️ Gemini failed: ${e.message}`);
   }
 
   // Попытка 2: Groq
   try {
-    console.log("🔄 GET trends via Groq...");
-    const raw = await groqFallback(prompt, true);
-    return NextResponse.json(parseJson(raw));
+    console.log("🔄 Groq fallback...");
+    const raw = await groqFallback(prompt);
+    return parseJson(raw);
   } catch (e: any) {
-    console.warn("⚠️ Groq GET failed:", e.message);
+    console.warn(`⚠️ Groq failed: ${e.message}`);
   }
 
   // Попытка 3: OpenRouter
+  console.log("🔄 OpenRouter fallback...");
+  return await openRouterFallback(prompt);
+}
+
+// ── Профили рынков ───────────────────────────────────────────────────────────
+const MARKET_PROFILES: Record<string, {
+  label:    string;
+  tone:     string;
+  trust:    string[];
+  redFlags: string[];
+  cta:      string;
+  language: string;
+}> = {
+  germany: {
+    label:    "Germany (DACH)",
+    tone:     "Formal, precise, process-oriented, deeply skeptical of hype and vague promises",
+    trust:    ["GDPR/DSGVO compliance", "ISO certifications", "EU data residency", "SLA clarity", "security standards"],
+    redFlags: ["unlock", "revolutionary", "game-changer", "all-in-one", "seamless", "next-gen", "AI-powered"],
+    cta:      "Soft and non-committal: 'Demo anfragen', 'Unverbindlich beraten lassen'",
+    language: "German"
+  },
+  poland: {
+    label:    "Poland",
+    tone:     "Direct but fact-based, values concrete numbers, transparent pricing and technical specifics",
+    trust:    ["specific ROI metrics", "transparent pricing model", "technical specifications", "implementation timeline", "case studies with real numbers"],
+    redFlags: ["hype without data", "vague promises", "hidden pricing", "abstract benefits"],
+    cta:      "Direct with specifics: 'Umów demo (15 min)', 'Zobacz jak to działa'",
+    language: "Polish"
+  },
+  brazil: {
+    label:    "Brazil",
+    tone:     "Warm, human, relationship-first, low-friction, conversational Portuguese expected",
+    trust:    ["Portuguese language support", "local Brazilian case studies", "WhatsApp or fast human contact", "sem compromisso framing", "LGPD compliance"],
+    redFlags: ["cold corporate tone", "aggressive sales push", "English-only support signals", "formal stiffness"],
+    cta:      "Human and frictionless: 'Agende uma demonstração', 'Teste grátis — sem compromisso'",
+    language: "Brazilian Portuguese"
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// GET — Поиск трендов
+// ════════════════════════════════════════════════════════════════════════════
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const market = searchParams.get('market') || 'germany';
+  const profile = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
+
+  const prompt = `
+You are an expert B2B market analyst specializing in ${profile.label}.
+Find 3 current and highly relevant B2B business trends from the last 90 days for ${profile.label}.
+
+IMPORTANT: Write ALL text values in Russian (plain text, no markdown, no bullet points, no formatting symbols).
+
+Respond ONLY with valid JSON, no markdown, no extra text:
+{
+  "market": "${profile.label}",
+  "trends": [
+    {
+      "trend_name": "Short trend name in Russian",
+      "narrative_hook": "One provocative insight or surprising fact in Russian",
+      "market_tension": "Key pain or contradiction this trend creates in Russian",
+      "why_now": "Why this trend is critical right now in Russian",
+      "resonance_score": 87
+    }
+  ]
+}
+
+resonance_score is integer 0-100 reflecting how strongly this trend affects B2B companies.
+Return exactly 3 trends. Be specific, not generic.
+  `.trim();
+
   try {
-    console.log("🔄 GET trends via OpenRouter...");
-    const data = await openRouterFallback(prompt);
+    const data = await callAI(prompt);
     return NextResponse.json(data);
-  } catch (e: any) {
-    console.error("❌ All providers failed:", e.message);
+  } catch (error: any) {
+    console.error("❌ GET /api/resonance-trends:", error.message);
     return NextResponse.json({
-      market: targetMarket,
+      market: profile.label,
       trends: [{
-        trend_name: "Провайдеры временно недоступны",
-        narrative_hook: "Все три ИИ-провайдера вернули ошибку",
-        market_tension: "Проверьте API-ключи в Vercel Environment Variables",
-        why_now: "Попробуйте через минуту",
+        trend_name:      "Провайдеры временно недоступны",
+        narrative_hook:  "Все ИИ-провайдеры вернули ошибку",
+        market_tension:  "Проверьте API-ключи в настройках Vercel",
+        why_now:         "Попробуйте через минуту",
         resonance_score: 0
       }]
     }, { status: 200 });
@@ -140,43 +181,15 @@ export async function GET(request: Request) {
 // POST — Evaluate + Improve
 // ════════════════════════════════════════════════════════════════════════════
 
-const MARKET_PROFILES: Record<string, {
-  tone: string;
-  trust: string[];
-  redFlags: string[];
-  cta: string;
-}> = {
-  germany: {
-    tone: "Formal, precise, process-oriented, deeply skeptical of hype",
-    trust: ["GDPR/DSGVO", "ISO certifications", "EU data residency", "SLA clarity"],
-    redFlags: ["unlock", "revolutionary", "game-changer", "all-in-one", "seamless"],
-    cta: "Soft: 'Demo anfragen', 'Unverbindlich beraten lassen'"
-  },
-  poland: {
-    tone: "Direct, fact-based, values concrete numbers and transparent pricing",
-    trust: ["specific ROI metrics", "transparent pricing", "technical specs", "case studies"],
-    redFlags: ["hype without data", "vague promises", "abstract benefits"],
-    cta: "Specific: 'Umów demo (15 min)', 'Zobacz jak to działa'"
-  },
-  brazil: {
-    tone: "Warm, human, relationship-first, low-friction, conversational",
-    trust: ["Portuguese support", "local case studies", "WhatsApp contact", "LGPD compliance"],
-    redFlags: ["cold corporate tone", "aggressive push", "English-only signals"],
-    cta: "Human: 'Agende uma demonstração', 'Teste grátis — sem compromisso'"
-  }
-};
-
 function buildEvaluatePrompt(text: string, market: string): string {
   const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  const label = { germany: "Germany (DACH)", poland: "Poland", brazil: "Brazil" }[market] || market;
-
   return `
-You are a senior B2B localization auditor. Analyze this marketing text for the ${label} market.
+You are a senior B2B localization auditor. Analyze this marketing text for the ${p.label} market.
 
-MARKET PROFILE:
-- Tone baseline: ${p.tone}
+MARKET PROFILE FOR ${p.label}:
+- Expected tone: ${p.tone}
 - Required trust markers: ${p.trust.join(", ")}
-- Red flags to avoid: ${p.redFlags.join(", ")}
+- Red flags (destroy trust): ${p.redFlags.join(", ")}
 - CTA style: ${p.cta}
 
 TEXT TO ANALYZE:
@@ -184,58 +197,62 @@ TEXT TO ANALYZE:
 ${text}
 """
 
-Be critical. Do not give PASS unless the text genuinely sounds local.
-Respond ONLY with valid JSON, no markdown, no extra text:
+INSTRUCTIONS:
+- Be critical. Only give PASS if the text genuinely sounds like it was written by a local.
+- Write ALL text values in Russian (plain text only, no markdown, no bullet points, no asterisks, no formatting).
+- For suggested_local write in ${p.language}.
+- Provide exactly 3 rewrites: Headline, CTA, Proof/Trust block.
+- genericness_score: 0 = fully original and local, 100 = pure US SaaS clichés.
+- All tone_map values must be integers from -5 to +5.
 
+Respond ONLY with valid JSON, no markdown, no extra text:
 {
   "verdict": "PASS" | "SUSPICIOUS" | "FOREIGN",
-  "verdict_reason": "One precise sentence.",
-  "genericness_score": <0-100>,
-  "generic_phrases": ["phrase1", "phrase2"],
+  "verdict_reason": "One precise sentence in Russian explaining the verdict",
+  "genericness_score": <integer 0-100>,
+  "generic_phrases": ["exact phrase from text", "another phrase"],
   "tone_map": {
-    "formal_casual": <-5 to 5>,
-    "bold_cautious": <-5 to 5>,
-    "technical_benefit": <-5 to 5>,
-    "abstract_concrete": <-5 to 5>,
-    "global_native": <-5 to 5>
+    "formal_casual": <integer -5 to 5>,
+    "bold_cautious": <integer -5 to 5>,
+    "technical_benefit": <integer -5 to 5>,
+    "abstract_concrete": <integer -5 to 5>,
+    "global_native": <integer -5 to 5>
   },
-  "missing_trust_signals": ["signal1", "signal2"],
-  "trend_context": "One sentence on a current B2B trend in ${label} relevant to this text.",
+  "missing_trust_signals": ["signal in Russian", "another signal in Russian"],
+  "trend_context": "One sentence in Russian about a current B2B trend in ${p.label} relevant to this text",
   "rewrites": [
     {
       "block": "Headline",
-      "original": "exact snippet",
+      "original": "exact snippet from input text",
       "suggested": "English rewrite",
-      "suggested_local": "Rewrite in local language (de/pl/pt-BR)",
-      "reason": "Why this works better"
+      "suggested_local": "Rewrite in ${p.language}",
+      "reason": "Explanation in Russian why this works better for ${p.label}"
     },
     {
       "block": "CTA",
-      "original": "exact snippet",
+      "original": "exact snippet from input text",
       "suggested": "English rewrite",
-      "suggested_local": "Rewrite in local language",
-      "reason": "Why this works better"
+      "suggested_local": "Rewrite in ${p.language}",
+      "reason": "Explanation in Russian why this works better for ${p.label}"
     },
     {
       "block": "Proof / Trust",
-      "original": "exact snippet",
+      "original": "exact snippet from input text",
       "suggested": "English rewrite with trust signals",
-      "suggested_local": "Rewrite in local language",
-      "reason": "Why this works better"
+      "suggested_local": "Rewrite in ${p.language} with trust signals",
+      "reason": "Explanation in Russian why this works better for ${p.label}"
     }
   ],
-  "brief_text": "Full polished rewrite of the entire text in English, localized for ${label}."
+  "brief_text": "Full polished rewrite of the entire text in English, properly localized for ${p.label}. Plain text only."
 }
   `.trim();
 }
 
 function buildImprovePrompt(text: string, market: string, context?: string): string {
   const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  const label = { germany: "Germany (DACH)", poland: "Poland", brazil: "Brazil" }[market] || market;
-
   return `
-You are an expert B2B copywriter specializing in ${label} market.
-Rewrite the following marketing text so it sounds completely native and compelling for ${label}.
+You are an expert B2B copywriter specializing in ${p.label} market.
+Rewrite the following marketing text so it sounds completely native and compelling for ${p.label}.
 
 MARKET PROFILE:
 - Tone: ${p.tone}
@@ -249,14 +266,23 @@ ORIGINAL TEXT:
 ${text}
 """
 
-Respond ONLY with valid JSON, no markdown:
+INSTRUCTIONS:
+- Write ALL text values in Russian (plain text only, no markdown, no bullet points, no asterisks).
+- improved_local must be written in ${p.language}.
+- changes array must have 3 to 5 items explaining what you changed and why.
+- tone_achieved: one short sentence in Russian describing the tone you achieved.
+
+Respond ONLY with valid JSON, no markdown, no extra text:
 {
-  "improved_text": "Full improved version in English",
-  "improved_local": "Full improved version in local language (de/pl/pt-BR)",
+  "improved_text": "Full improved version in English. Plain text only.",
+  "improved_local": "Full improved version in ${p.language}. Plain text only.",
   "changes": [
-    { "what": "What was changed", "why": "Why it works better for ${label}" }
+    {
+      "what": "What was changed in Russian",
+      "why": "Why it works better for ${p.label} in Russian"
+    }
   ],
-  "tone_achieved": "One sentence describing the tone of the new text"
+  "tone_achieved": "One sentence in Russian describing the tone of the new text"
 }
   `.trim();
 }
@@ -266,47 +292,32 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action, text, market, context } = body;
 
-    if (!text || text.trim().length < 10) {
-      return NextResponse.json({ error: "Text is required (min 10 chars)" }, { status: 400 });
+    if (!text || typeof text !== 'string' || text.trim().length < 10) {
+      return NextResponse.json(
+        { error: "Текст обязателен (минимум 10 символов)" },
+        { status: 400 }
+      );
     }
     if (!market || !(market in MARKET_PROFILES)) {
-      return NextResponse.json({ error: "Invalid market" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Некорректный рынок. Допустимые значения: germany, poland, brazil" },
+        { status: 400 }
+      );
     }
 
     const prompt = action === "improve"
-      ? buildImprovePrompt(text, market, context)
-      : buildEvaluatePrompt(text, market);
+      ? buildImprovePrompt(text.trim(), market, context)
+      : buildEvaluatePrompt(text.trim(), market);
 
-    console.log(`📋 POST action: ${action}, market: ${market}`);
+    console.log(`📋 POST action=${action} market=${market}`);
 
-    // Попытка 1: Gemini
-    try {
-      const model = genAI.getGenerativeModel({
-        model: MODELS.GEMINI,
-        generationConfig: { responseMimeType: "application/json" }
-      });
-      const result = await model.generateContent(prompt);
-      return NextResponse.json(parseJson(result.response.text()));
-    } catch (e: any) {
-      console.warn("⚠️ Gemini POST failed:", e.message);
-    }
-
-    // Попытка 2: Groq
-    try {
-      const raw = await groqFallback(prompt, true);
-      return NextResponse.json(parseJson(raw));
-    } catch (e: any) {
-      console.warn("⚠️ Groq POST failed:", e.message);
-    }
-
-    // Попытка 3: OpenRouter
-    const data = await openRouterFallback(prompt);
+    const data = await callAI(prompt);
     return NextResponse.json(data);
 
   } catch (error: any) {
     console.error("❌ POST /api/resonance-trends:", error.message);
     return NextResponse.json(
-      { error: "All AI providers failed", details: error.message },
+      { error: "Все ИИ-провайдеры недоступны. Попробуйте позже.", details: error.message },
       { status: 503 }
     );
   }
