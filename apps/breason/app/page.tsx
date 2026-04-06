@@ -4,117 +4,119 @@ import { useState } from "react";
 
 type Step = "search" | "evaluate" | "improve";
 
-const MARKETS: Record<string, { label: string; flag: string; summary: string }> = {
-  brazil:  { label: "Бразилия",  flag: "🇧🇷", summary: "Тёплая, доверительная B2B-коммуникация." },
-  poland:  { label: "Польша",    flag: "🇵🇱", summary: "Прагматичная, скептичная аудитория." },
-  germany: { label: "Германия",  flag: "🇩🇪", summary: "Структурированный рынок и надёжность." },
+const MARKETS: Record<string, { label: string; flag: string }> = {
+  brazil:  { label: "Бразилия",  flag: "🇧🇷" },
+  poland:  { label: "Польша",    flag: "🇵🇱" },
+  germany: { label: "Германия",  flag: "🇩🇪" },
 };
 
 const STYLE = `
 :root {
-  --purple: #7C3AED;   /* Забота */
-  --blue: #0EA5E9;     /* Доверие */
-  --metal: #475569;    /* Надежность */
-  --white: #FFFFFF;    /* Творчество */
-  --orange: #F97316;   /* Оптимизм */
-  --lime: #84CC16;     /* Энергия (ЯРКИЙ) */
+  --purple: #7C3AED; --blue: #0EA5E9; --metal: #475569;
+  --white: #FFFFFF; --orange: #F97316; --lime: #84CC16;
 }
 
-body { font-family: sans-serif; background: var(--white); color: var(--metal); margin: 0; }
+body { font-family: 'Inter', sans-serif; background: var(--white); color: var(--metal); margin: 0; }
 
-.sidebar { width: 260px; border-right: 1px solid #eee; height: 100vh; padding: 24px; position: fixed; }
-.main-content { margin-left: 260px; padding: 40px; min-height: 100vh; }
+.app-container { display: flex; min-height: 100vh; flex-direction: row; }
 
-.logo { display: flex; alignItems: center; gap: 12px; cursor: pointer; text-decoration: none; margin-bottom: 40px; }
-.logo-icon { background: var(--lime); color: white; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
+/* Sidebar & Mobile Nav */
+.sidebar { width: 260px; border-right: 1px solid #eee; padding: 24px; background: white; flex-shrink: 0; }
+.main-content { flex-grow: 1; padding: 40px; max-width: 1000px; margin: 0 auto; }
+
+.logo { display: flex; align-items: center; gap: 12px; cursor: pointer; margin-bottom: 40px; }
+.logo-icon { background: var(--lime); color: white; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 900; }
 .logo-text { color: var(--purple); font-weight: 800; font-size: 22px; }
 
-/* Яркие лаймовые шаги */
-.step-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; margin-bottom: 8px; transition: 0.2s; color: var(--metal); font-weight: 600; }
+.step-item { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; cursor: pointer; margin-bottom: 8px; color: var(--metal); font-weight: 600; transition: 0.2s; }
 .step-item.active { background: rgba(132, 204, 22, 0.15); color: var(--lime); }
 .step-num { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; border: 2px solid currentColor; }
 
-.btn-primary { background: var(--orange); color: white; border: none; padding: 14px 28px; border-radius: 14px; font-weight: 700; cursor: pointer; transition: 0.2s; }
-.btn-primary:hover { background: var(--purple); transform: translateY(-2px); }
+/* UI Elements */
+.btn-primary { background: var(--orange); color: white; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 700; cursor: pointer; width: 100%; }
+.btn-primary:hover { background: var(--purple); }
+.input-area { width: 100%; min-height: 150px; padding: 16px; border: 2px solid #f1f5f9; border-radius: 16px; font-size: 16px; margin-bottom: 16px; outline: none; }
+.input-area:focus { border-color: var(--blue); }
 
-.card { border-left: 6px solid var(--lime); background: #f9fafb; padding: 24px; border-radius: 16px; margin-top: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-.tag { background: rgba(14, 165, 233, 0.1); color: var(--blue); padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.card { border-left: 6px solid var(--lime); background: #f9fafb; padding: 24px; border-radius: 16px; margin-top: 20px; }
+
+/* Mobile Adaptivity */
+@media (max-width: 768px) {
+  .app-container { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid #eee; padding: 16px; position: sticky; top: 0; z-index: 100; }
+  .logo { margin-bottom: 16px; }
+  .main-content { padding: 20px; margin-left: 0; }
+  .sb-nav { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+  .step-item { padding: 8px 12px; margin-bottom: 0; flex-shrink: 0; }
+}
 `;
-
-// --- Под-компоненты ---
-
-function SearchStep() {
-  const [market, setMarket] = useState("brazil");
-  const [loading, setLoading] = useState(false);
-  const [trends, setTrends] = useState<any[]>([]);
-
-  const fetchTrends = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/resonance-trends?market=${market}`);
-      const data = await res.json();
-      setTrends(data.trends || []);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div>
-      <h2 style={{ color: "var(--purple)" }}>Поиск резонансных трендов</h2>
-      <div style={{ display: "flex", gap: "12px", marginBottom: "30px" }}>
-        <select 
-          value={market} 
-          onChange={(e) => setMarket(e.target.value)}
-          style={{ padding: "12px", borderRadius: "12px", border: "1px solid #ddd", width: "200px" }}
-        >
-          {Object.entries(MARKETS).map(([id, m]) => (
-            <option key={id} value={id}>{m.flag} {m.label}</option>
-          ))}
-        </select>
-        <button className="btn-primary" onClick={fetchTrends} disabled={loading}>
-          {loading ? "Анализ рынка..." : "Найти тренды →"}
-        </button>
-      </div>
-
-      {loading && <div style={{ color: "var(--blue)", fontWeight: "bold", animation: "pulse 2s infinite" }}>AI изучает рынок {market}...</div>}
-
-      {trends.map((t, i) => (
-        <div key={i} className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px" }}>
-            <span className="tag">Trend #{i+1}</span>
-            <span style={{ color: "var(--lime)", fontWeight: "900" }}>SCORE: {t.resonanceScore}</span>
-          </div>
-          <h3 style={{ margin: "0 0 10px 0", fontSize: "20px" }}>{t.title}</h3>
-          <p style={{ color: "var(--metal)", lineHeight: "1.5" }}>{t.insight}</p>
-          <div style={{ background: "white", padding: "12px", borderRadius: "8px", borderLeft: "4px solid var(--orange)", marginTop: "15px", fontStyle: "italic" }}>
-            "{t.narrative_hook}"
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function EvaluateStep() {
-  return <div style={{ padding: "20px", border: "2px dashed #ddd", borderRadius: "20px", textAlign: "center", color: "#999" }}>Инструмент проверки текста (в разработке)</div>;
-}
-
-function ImproveStep() {
-  return <div style={{ padding: "20px", border: "2px dashed #ddd", borderRadius: "20px", textAlign: "center", color: "#999" }}>Инструмент улучшения (в разработке)</div>;
-}
-
-// --- Основной экран ---
 
 export default function BreasonApp() {
   const [step, setStep] = useState<Step>("search");
+  const [trends, setTrends] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [textToProcess, setTextToProcess] = useState("");
 
   const resetToHome = () => setStep("search");
 
-  return (
+  // --- РАЗДЕЛ 1: ПОИСК ---
+  const SearchStep = () => {
+    const [market, setMarket] = useState("brazil");
+    const handleSearch = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/resonance-trends?market=${market}`);
+        const data = await res.json();
+        setTrends(data.trends || []);
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    };
+
+    return (
+      <div>
+        <h2 style={{ color: "var(--purple)" }}>Тренды рынка</h2>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexDirection: "column" }}>
+          <select value={market} onChange={(e) => setMarket(e.target.value)} className="input-area" style={{minHeight: "50px"}}>
+            {Object.entries(MARKETS).map(([id, m]) => <option key={id} value={id}>{m.flag} {m.label}</option>)}
+          </select>
+          <button className="btn-primary" onClick={handleSearch}>{loading ? "Анализ..." : "Найти тренды"}</button>
+        </div>
+        {trends.map((t, i) => (
+          <div key={i} className="card">
+             <span style={{ color: "var(--blue)", fontWeight: "bold", fontSize: "12px" }}>#{i+1} РЕЗОНАНС {t.resonanceScore}%</span>
+             <h3 style={{marginTop: "8px"}}>{t.title}</h3>
+             <p>{t.insight}</p>
+             <button onClick={() => { setTextToProcess(t.narrative_hook); setStep("evaluate"); }} style={{background: "none", border: "1px solid var(--blue)", color: "var(--blue)", padding: "8px", borderRadius: "8px", cursor: "pointer"}}>Проверить этот хук</button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // --- РАЗДЕЛ 2: ПРОВЕРКА ---
+  const EvaluateStep = () => (
     <div>
+      <h2 style={{ color: "var(--purple)" }}>Проверка резонанса</h2>
+      <textarea className="input-area" placeholder="Вставьте ваш текст или хук..." value={textToProcess} onChange={(e) => setTextToProcess(e.target.value)} />
+      <button className="btn-primary">Запустить анализ текста</button>
+      <p style={{marginTop: "20px", color: "var(--metal)", fontSize: "14px"}}>Здесь AI проверит ваш текст на соответствие культурным кодам рынка.</p>
+    </div>
+  );
+
+  // --- РАЗДЕЛ 3: УЛУЧШЕНИЕ ---
+  const ImproveStep = () => (
+    <div>
+      <h2 style={{ color: "var(--purple)" }}>Сделать красиво</h2>
+      <textarea className="input-area" placeholder="Что мы улучшаем?" value={textToProcess} onChange={(e) => setTextToProcess(e.target.value)} />
+      <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px"}}>
+        <button className="btn-primary" style={{background: "var(--blue)"}}>Добавить эмоций</button>
+        <button className="btn-primary">Убрать лишнее</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="app-container">
       <style>{STYLE}</style>
       
       <aside className="sidebar">
@@ -123,13 +125,9 @@ export default function BreasonApp() {
           <span className="logo-text">Breason</span>
         </div>
 
-        <nav>
+        <nav className="sb-nav">
           {(["search", "evaluate", "improve"] as Step[]).map((s, i) => (
-            <div 
-              key={s} 
-              className={`step-item ${step === s ? 'active' : ''}`}
-              onClick={() => setStep(s)}
-            >
+            <div key={s} className={`step-item ${step === s ? 'active' : ''}`} onClick={() => setStep(s)}>
               <div className="step-num">{i + 1}</div>
               {s === "search" ? "Искать" : s === "evaluate" ? "Проверять" : "Улучшать"}
             </div>
@@ -138,15 +136,9 @@ export default function BreasonApp() {
       </aside>
 
       <main className="main-content">
-        <header style={{ display: "flex", justifyContent: "space-between", marginBottom: "40px" }}>
-          <div style={{ color: "var(--purple)", fontWeight: "700" }}>
-            Breason <span style={{ color: "#ddd", margin: "0 8px" }}>/</span> {step}
-          </div>
-          <div style={{ background: "var(--lime)", color: "white", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "800" }}>
-            V0.5 PRO
-          </div>
-        </header>
-
+        <div style={{marginBottom: "20px", fontSize: "14px", color: "var(--blue)", fontWeight: "bold"}}>
+          {step.toUpperCase()} MODE
+        </div>
         {step === "search" && <SearchStep />}
         {step === "evaluate" && <EvaluateStep />}
         {step === "improve" && <ImproveStep />}
