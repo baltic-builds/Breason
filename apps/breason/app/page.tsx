@@ -15,7 +15,7 @@ const STEPS: Step[] = ["search", "evaluate", "improve"];
 const stepLabels: Record<Step, string> = { search: "Искать", evaluate: "Проверять", improve: "Улучшать" };
 
 const STYLE = `
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@800&family=DM+Sans:wght@400;500;700&display=swap');
+@import url('[https://fonts.googleapis.com/css2?family=Syne:wght@800&family=DM+Sans:wght@400;500;700&display=swap](https://fonts.googleapis.com/css2?family=Syne:wght@800&family=DM+Sans:wght@400;500;700&display=swap)');
 :root {
   --violet: #7C3AED; --lime: #84CC16; --orange: #F97316;
   --bg: #F8FAFC; --surface: #FFFFFF; --t1: #1E293B; --t2: #475569; --t3: #94A3B8;
@@ -41,7 +41,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
 .btn-cta:hover { opacity: 0.9; transform: translateY(-1px); }
 .btn-cta:disabled { background: var(--t3); cursor: not-allowed; }
 .inp { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-family: inherit; font-size: 14px; outline: none; margin-bottom: 12px; }
-.analysis-box { background: #F1F5F9; padding: 16px; border-radius: 12px; margin: 16px 0; font-size: 13px; line-height: 1.6; border-left: 3px solid var(--orange); }
+.analysis-box { background: #F1F5F9; padding: 16px; border-radius: 12px; margin: 16px 0; font-size: 13px; line-height: 1.6; border-left: 3px solid var(--orange); white-space: pre-wrap; }
 .score-badge { position: absolute; top: 24px; right: 24px; background: rgba(132, 204, 22, 0.1); color: var(--lime); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
 .footer-info { margin-top: auto; padding-top: 20px; font-size: 11px; color: var(--t3); line-height: 1.6; }
 `;
@@ -63,8 +63,12 @@ export default function BreasonApp() {
       const res = await fetch(`/api/resonance-trends?market=${market}`);
       const data = await res.json();
       if (data.trends) setTrends(data.trends);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    } catch (e) {
+      console.error(e);
+      setTrends([{ trend_name: "Ошибка", narrative_hook: "Не удалось подключиться к серверу." }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeepDive = async (title: string) => {
@@ -75,22 +79,27 @@ export default function BreasonApp() {
         body: JSON.stringify({ action: "deep_dive", market, trendTitle: title }),
       });
       const data = await res.json();
-      setDeepDive(prev => ({ ...prev, [title]: data.analysis }));
-    } catch (e) { setDeepDive(prev => ({ ...prev, [title]: "Ошибка загрузки." })); }
+      if (data.result) setDeepDive(prev => ({ ...prev, [title]: data.result }));
+    } catch (e) {
+      setDeepDive(prev => ({ ...prev, [title]: "Ошибка загрузки." }));
+    }
   };
 
   const handleEvaluate = async () => {
     setLoading(true);
-    setEvalResult("Gemini анализирует...");
+    setEvalResult("Gemini анализирует контент...");
     try {
       const res = await fetch("/api/resonance-trends", {
         method: "POST",
         body: JSON.stringify({ action: "evaluate", market, url, text }),
       });
       const data = await res.json();
-      setEvalResult(data.result);
-    } catch (e) { setEvalResult("Ошибка анализа."); }
-    finally { setLoading(false); }
+      if (data.result) setEvalResult(data.result);
+    } catch (e) {
+      setEvalResult("Ошибка анализа. Попробуйте еще раз.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleImprove = async () => {
@@ -101,9 +110,12 @@ export default function BreasonApp() {
         body: JSON.stringify({ action: "improve", market, text }),
       });
       const data = await res.json();
-      setText(data.improvedText);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      if (data.result) setText(data.result);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -116,7 +128,7 @@ export default function BreasonApp() {
             <span style={{ fontSize: 11, opacity: 0.5, width: 20 }}>0{i + 1}</span> {stepLabels[s]}
           </button>
         ))}
-        <div className="footer-info">v 0.5.7<br/><span style={{ opacity: 0.5 }}>from pavel with love</span></div>
+        <div className="footer-info">v 0.5.8<br/><span style={{ opacity: 0.5 }}>from pavel with love</span></div>
       </aside>
 
       <main className="main">
@@ -134,6 +146,7 @@ export default function BreasonApp() {
                 <div key={k} className={`mkt-box ${market === k ? 'active' : ''}`} onClick={() => { setMarket(k); setTrends([]); }}>
                   <div style={{ fontSize: '20px' }}>{MARKETS[k].flag}</div>
                   <div style={{ fontWeight: 700, fontSize: '13px', marginTop: '6px' }}>{MARKETS[k].label}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--t3)', marginTop: '4px', lineHeight: 1.3 }}>{MARKETS[k].hint}</div>
                 </div>
               ))}
             </div>
@@ -147,7 +160,7 @@ export default function BreasonApp() {
               {trends.map((t, i) => (
                 <div className="card" key={i} style={{ borderLeft: '4px solid var(--lime)', marginTop: 24 }}>
                   <div className="score-badge">{t.resonance_score}%</div>
-                  <h2 style={{ fontSize: 18, marginBottom: 8 }}>{t.trend_name}</h2>
+                  <h2 style={{ fontSize: 18, marginBottom: 8, paddingRight: 80 }}>{t.trend_name}</h2>
                   <p style={{ color: 'var(--violet)', fontWeight: 700, marginBottom: 12 }}>{t.narrative_hook}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                     <div><label className="field-label">Проблема</label><p style={{ fontSize: 13 }}>{t.market_tension}</p></div>
