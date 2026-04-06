@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const MODELS = {
   GEMINI: "gemini-3.1-flash-lite-preview",
-  GROQ_BEST: "llama-3.3-70b-versatile", // Или "llama-4-scout", если доступна в API
+  GROQ: "llama-3.3-70b-versatile",
   OPENROUTER: "google/gemini-2.0-flash-lite-preview-02-05:free"
 };
 
@@ -20,17 +20,34 @@ export async function GET(request: Request) {
   };
 
   const targetMarket = marketNames[market] || market;
-  const prompt = `Действуй как B2B аналитик. Регион: ${targetMarket}. Найди 3 тренда на 2026 год. Ответь ТОЛЬКО в JSON: {"market": "${targetMarket}", "trends": [{"trend_name": "...", "resonance_score": 95}]}. Текст на русском.`;
+  const systemPrompt = `
+    Ты эксперт по B2B трендам в ${targetMarket}. Сегодня апрель 2026 года.
+    Найди 3 свежих тренда за последние 90 дней.
+    ОТВЕТЬ СТРОГО В JSON:
+    {
+      "market": "${targetMarket}",
+      "trends": [
+        {
+          "trend_name": "Название",
+          "narrative_hook": "Инсайт",
+          "market_tension": "Проблема",
+          "why_now": "Актуальность",
+          "resonance_score": 95
+        }
+      ]
+    }
+    Весь текст на русском.
+  `;
 
-  // --- УРОВЕНЬ 1: Gemini 3.1 (С поиском Google) ---
+  // ПОПЫТКА 1: Gemini с поиском
   try {
     const model = genAI.getGenerativeModel({ model: MODELS.GEMINI, tools: [{ googleSearch: {} }] });
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent(systemPrompt);
     return NextResponse.json(parseJson(result.response.text()));
-  } catch (e) {
-    console.log("Gemini упал, запуск УРОВНЯ 2 (Groq)...");
+  } catch (err: any) {
+    console.error("Gemini + Search failed, switching to Groq...");
 
-    // --- УРОВЕНЬ 2: Groq (Максимальная скорость и логика Llama 3.3/4) ---
+    // ПОПЫТКА 2: Groq (Llama 3.3 70B) — Самая быстрая альтернатива
     if (process.env.GROQ_API_KEY) {
       try {
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -40,25 +57,25 @@ export async function GET(request: Request) {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model: MODELS.GROQ_BEST,
-            messages: [{ role: "user", content: prompt }],
+            model: MODELS.GROQ,
+            messages: [{ role: "user", content: systemPrompt }],
             response_format: { type: "json_object" }
           })
         });
         const groqData = await groqRes.json();
         return NextResponse.json(JSON.parse(groqData.choices[0].message.content));
       } catch (groqErr) {
-        console.log("Groq упал, запуск УРОВНЯ 3 (OpenRouter)...");
-        
-        // --- УРОВЕНЬ 3: OpenRouter (Финальный заслон) ---
-        return await handleOpenRouter(prompt);
+        console.error("Groq failed, switching to OpenRouter...");
+
+        // ПОПЫТКА 3: OpenRouter
+        return await handleOpenRouterFallback(systemPrompt);
       }
     }
-    return NextResponse.json({ error: "Сервисы недоступны" }, { status: 503 });
+    return NextResponse.json({ error: "No fallback available" }, { status: 503 });
   }
 }
 
-async function handleOpenRouter(prompt: string) {
+async function handleOpenRouterFallback(prompt: string) {
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -66,17 +83,20 @@ async function handleOpenRouter(prompt: string) {
         "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ model: MODELS.OPENROUTER, messages: [{ role: "user", content: prompt }] })
+      body: JSON.stringify({
+        model: MODELS.OPENROUTER,
+        messages: [{ role: "user", content: prompt }]
+      })
     });
     const data = await res.json();
     return NextResponse.json(parseJson(data.choices[0].message.content));
   } catch {
-    return NextResponse.json({ error: "Ошибка всех провайдеров" }, { status: 503 });
+    return NextResponse.json({ error: "All providers failed" }, { status: 503 });
   }
 }
 
 function parseJson(text: string) {
   const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("No JSON");
+  if (!match) throw new Error("Invalid JSON response");
   return JSON.parse(match[0]);
 }
