@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Инициализируем API (ключ возьмем из переменных окружения)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function GET(request: Request) {
@@ -16,58 +15,56 @@ export async function GET(request: Request) {
 
   const targetMarket = marketNames[market] || market;
 
-  // 1. Инициализируем модель с поддержкой ПОИСКА (Google Search)
-  // Это ключевой момент, чтобы данные были свежими
+  // ИСПОЛЬЗУЕМ 1.5 FLASH (у неё больше лимитов для Free Tier)
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash",
+    model: "gemini-1.5-flash",
     tools: [{ googleSearch: {} }] 
   });
 
   const systemPrompt = `
-    Ты — ведущий B2B стратег в регионе ${targetMarket}. 
-    Твоя задача: найти РЕАЛЬНЫЕ свежие тренды за последние 3 месяца на основе данных Google Trends и локальных бизнес-новостей.
+    Ты — эксперт по B2B маркетингу в регионе ${targetMarket}. Сегодня апрель 2026 года.
+    Используй Google Search, чтобы найти РЕАЛЬНЫЕ тренды в B2B за последние 90 дней.
     
-    ИНСТРУКЦИЯ ПО ПОИСКУ:
-    1. Сначала найди растущие поисковые запросы в ${targetMarket} в категориях "Бизнес", "Технологии" и "Маркетинг".
-    2. Выдели 3-5 аномалий (необычный рост интереса к конкретной теме).
-    3. Напиши глубокий бриф на РУССКОМ языке.
-    
-    ПРАВИЛА:
-    - Никакой "цифровизации" и "инноваций". Пиши конкретное "мясо".
-    - Поле market_tension: это конфликт. Сила А против Силы Б.
-    - JSON должен быть СТРОГИМ, без лишних символов.
-
-    ОТВЕТЬ В ФОРМАТЕ JSON:
+    ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON:
     {
       "market": "${targetMarket}",
       "year": 2026,
-      "analyst_note": "Одна фраза о реальном настроении рынка сегодня.",
+      "analyst_note": "Краткий инсайт о рынке.",
       "trends": [
         {
           "trend_name": "Название",
-          "narrative_hook": "Зацепка с конфликтом",
-          "market_tension": "Конкретный конфликт сил",
-          "why_now": "Почему это взлетело (ссылка на событие или данные Trends)",
+          "narrative_hook": "Зацепка",
+          "market_tension": "Конфликт",
+          "why_now": "Почему сейчас",
           "resonance_score": 95
         }
       ]
     }
+    
+    ВЕСЬ ТЕКСТ ВНУТРИ JSON ДОЛЖЕН БЫТЬ НА РУССКОМ ЯЗЫКЕ.
   `;
 
   try {
-    // 2. Отправляем запрос
     const result = await model.generateContent(systemPrompt);
     const response = await result.response;
-    let text = response.text();
+    const text = response.text();
 
-    // Очищаем от возможных markdown-кавычек, если ИИ их добавит
+    // Очистка JSON от маркдауна
     const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
     
     return NextResponse.json(JSON.parse(cleanJson));
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Ошибка API:", error);
-    // Если что-то упало, возвращаем твой старый мок как запасной вариант
-    return NextResponse.json({ error: "Не удалось получить свежие данные" }, { status: 500 });
+    
+    // Если квота превышена, возвращаем понятную ошибку клиенту
+    if (error.status === 429) {
+      return NextResponse.json(
+        { error: "Превышена квота запросов к ИИ. Попробуйте через минуту." }, 
+        { status: 429 }
+      );
+    }
+
+    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
   }
 }
