@@ -1,8 +1,9 @@
 {
   "name": "breason-monorepo",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "Breason — AI-powered marketing resonance & evaluation platform (Resonance → Evaluate → ReDuck)",
+  "type": "module",
+  "description": "Breason — AI-powered marketing resonance & evaluation platform",
   "packageManager": "npm@10.8.0",
   "engines": {
     "node": ">=20.0.0"
