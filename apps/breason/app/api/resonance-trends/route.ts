@@ -4,13 +4,71 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const MODELS = {
-  GEMINI:      process.env.GEMINI_MODEL || "gemini-2.0-flash",
-  GROQ:        "llama-3.3-70b-versatile",
-  OPENROUTER:  "google/gemini-2.0-flash-lite-preview-02-05:free"
-};
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+const GROQ_MODEL       = "llama-3.3-70b-versatile";
+const OPENROUTER_MODEL = "google/gemini-2.0-flash-lite-preview-02-05:free";
+
+// ── Авто-выбор самой свежей Gemini Flash модели ──────────────────────────────
+// Кэшируем на время жизни инстанса (serverless = на один холодный старт)
+let cachedGeminiModel: string | null = null;
+
+async function getBestGeminiModel(): Promise<string> {
+  if (cachedGeminiModel) return cachedGeminiModel;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+
+    if (!res.ok) throw new Error(`ListModels ${res.status}`);
+
+    const data = await res.json();
+    const models: { name: string; supportedGenerationMethods?: string[] }[] = data.models || [];
+
+    // Фильтруем: только flash-модели с поддержкой generateContent
+    const flashModels = models
+      .filter(m =>
+        m.name.includes('flash') &&
+        !m.name.includes('thinking') &&   // thinking-модели медленнее, не нужны
+        (m.supportedGenerationMethods || []).includes('generateContent')
+      )
+      .map(m => m.name.replace('models/', ''))
+      // Сортируем: сначала самые новые (по номеру версии)
+      .sort((a, b) => {
+        // Извлекаем числовую часть версии: "gemini-3.1-flash-lite" → [3, 1]
+        const parseVer = (s: string) => {
+          const match = s.match(/gemini-(\d+)\.?(\d*)/);
+          if (!match) return [0, 0];
+          return [parseInt(match[1] || '0'), parseInt(match[2] || '0')];
+        };
+        const [aMaj, aMin] = parseVer(a);
+        const [bMaj, bMin] = parseVer(b);
+        if (bMaj !== aMaj) return bMaj - aMaj;
+        return bMin - aMin;
+      });
+
+    console.log('📋 Available Gemini flash models:', flashModels);
+
+    // Приоритет: lite-версии (выше лимиты на free tier) → обычные flash
+    const liteModel = flashModels.find(m => m.includes('lite'));
+    const bestModel = liteModel || flashModels[0];
+
+    if (!bestModel) throw new Error("No suitable flash model found");
+
+    console.log(`✅ Selected Gemini model: ${bestModel}`);
+    cachedGeminiModel = bestModel;
+    return bestModel;
+
+  } catch (e: any) {
+    // Если ListModels упал — используем известную актуальную модель как запасной вариант
+    const fallbackModel = process.env.GEMINI_MODEL || "gemini-2.5-flash-preview-04-17";
+    console.warn(`⚠️ ListModels failed (${e.message}), using fallback: ${fallbackModel}`);
+    cachedGeminiModel = fallbackModel;
+    return fallbackModel;
+  }
+}
 
 // ── Утилита парсинга JSON ────────────────────────────────────────────────────
 function parseJson(text: string): any {
@@ -34,7 +92,7 @@ async function openRouterFallback(prompt: string): Promise<any> {
       "HTTP-Referer":  "https://breason.vercel.app",
     },
     body: JSON.stringify({
-      model:    MODELS.OPENROUTER,
+      model:    OPENROUTER_MODEL,
       messages: [{ role: "user", content: prompt }]
     })
   });
@@ -53,7 +111,7 @@ async function groqFallback(prompt: string): Promise<string> {
       "Content-Type":  "application/json"
     },
     body: JSON.stringify({
-      model:           MODELS.GROQ,
+      model:           GROQ_MODEL,
       messages:        [{ role: "user", content: prompt }],
       response_format: { type: "json_object" }
     })
@@ -65,22 +123,25 @@ async function groqFallback(prompt: string): Promise<string> {
 
 // ── Универсальный вызов ИИ (Gemini → Groq → OpenRouter) ─────────────────────
 async function callAI(prompt: string): Promise<any> {
-  // Попытка 1: Gemini
+  // Попытка 1: Gemini (автовыбор самой свежей модели)
   try {
-    console.log(`🤖 Gemini: ${MODELS.GEMINI}`);
+    const modelName = await getBestGeminiModel();
+    console.log(`🤖 Calling Gemini: ${modelName}`);
     const model = genAI.getGenerativeModel({
-      model:            MODELS.GEMINI,
+      model:            modelName,
       generationConfig: { responseMimeType: "application/json" }
     });
     const result = await model.generateContent(prompt);
     return parseJson(result.response.text());
   } catch (e: any) {
+    // Сбрасываем кэш — возможно модель больше недоступна
+    cachedGeminiModel = null;
     console.warn(`⚠️ Gemini failed: ${e.message}`);
   }
 
   // Попытка 2: Groq
   try {
-    console.log("🔄 Groq fallback...");
+    console.log("🔄 Trying Groq...");
     const raw = await groqFallback(prompt);
     return parseJson(raw);
   } catch (e: any) {
@@ -88,7 +149,7 @@ async function callAI(prompt: string): Promise<any> {
   }
 
   // Попытка 3: OpenRouter
-  console.log("🔄 OpenRouter fallback...");
+  console.log("🔄 Trying OpenRouter...");
   return await openRouterFallback(prompt);
 }
 
@@ -132,14 +193,14 @@ const MARKET_PROFILES: Record<string, {
 // ════════════════════════════════════════════════════════════════════════════
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const market = searchParams.get('market') || 'germany';
+  const market  = searchParams.get('market') || 'germany';
   const profile = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
 
   const prompt = `
 You are an expert B2B market analyst specializing in ${profile.label}.
 Find 3 current and highly relevant B2B business trends from the last 90 days for ${profile.label}.
 
-IMPORTANT: Write ALL text values in Russian (plain text, no markdown, no bullet points, no formatting symbols).
+IMPORTANT: Write ALL text values in Russian. Use plain text only — no markdown, no bullet points, no asterisks, no formatting symbols of any kind.
 
 Respond ONLY with valid JSON, no markdown, no extra text:
 {
@@ -155,8 +216,7 @@ Respond ONLY with valid JSON, no markdown, no extra text:
   ]
 }
 
-resonance_score is integer 0-100 reflecting how strongly this trend affects B2B companies.
-Return exactly 3 trends. Be specific, not generic.
+resonance_score is integer 0-100. Return exactly 3 trends. Be specific, not generic.
   `.trim();
 
   try {
@@ -168,7 +228,7 @@ Return exactly 3 trends. Be specific, not generic.
       market: profile.label,
       trends: [{
         trend_name:      "Провайдеры временно недоступны",
-        narrative_hook:  "Все ИИ-провайдеры вернули ошибку",
+        narrative_hook:  "Все три ИИ-провайдера вернули ошибку",
         market_tension:  "Проверьте API-ключи в настройках Vercel",
         why_now:         "Попробуйте через минуту",
         resonance_score: 0
@@ -199,7 +259,7 @@ ${text}
 
 INSTRUCTIONS:
 - Be critical. Only give PASS if the text genuinely sounds like it was written by a local.
-- Write ALL text values in Russian (plain text only, no markdown, no bullet points, no asterisks, no formatting).
+- Write ALL text values in Russian. Use plain text only — no markdown, no bullet points, no asterisks, no formatting symbols.
 - For suggested_local write in ${p.language}.
 - Provide exactly 3 rewrites: Headline, CTA, Proof/Trust block.
 - genericness_score: 0 = fully original and local, 100 = pure US SaaS clichés.
@@ -267,10 +327,10 @@ ${text}
 """
 
 INSTRUCTIONS:
-- Write ALL text values in Russian (plain text only, no markdown, no bullet points, no asterisks).
+- Write ALL text values in Russian. Use plain text only — no markdown, no bullet points, no asterisks, no formatting symbols.
 - improved_local must be written in ${p.language}.
-- changes array must have 3 to 5 items explaining what you changed and why.
-- tone_achieved: one short sentence in Russian describing the tone you achieved.
+- changes array must have 3 to 5 items.
+- tone_achieved: one short sentence in Russian.
 
 Respond ONLY with valid JSON, no markdown, no extra text:
 {
