@@ -1,4 +1,3 @@
-// /apps/breason/app/api/resonance-trends/route.ts
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -7,7 +6,6 @@ export const maxDuration = 60;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// Умная функция вызова: берет модель из Vercel ENV, либо использует самую свежую Lite по умолчанию
 const getGeminiModelName = () => {
   return process.env.GEMINI_MODEL || "gemini-3.1-flash-lite-preview";
 };
@@ -19,13 +17,11 @@ async function generateAIResponse(prompt: string, expectJson: boolean = false, u
   try {
     console.log(`🤖 Using Gemini Model: ${modelName}`);
     
-    // Настраиваем Gemini
     const modelConfig: any = { 
       model: modelName,
       generationConfig: expectJson ? { responseMimeType: "application/json" } : {}
     };
 
-    // Включаем Google Search только там, где это реально нужно (например, для GET поиска трендов)
     if (useSearch) {
       modelConfig.tools = [{ googleSearch: {} }];
     }
@@ -41,7 +37,7 @@ async function generateAIResponse(prompt: string, expectJson: boolean = false, u
     if (process.env.GROQ_API_KEY) {
       try {
         console.log("🔄 Falling back to Groq Llama 3.3...");
-        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const groqRes = await fetch('[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
@@ -68,7 +64,7 @@ async function generateAIResponse(prompt: string, expectJson: boolean = false, u
 }
 
 // ==========================================
-// GET: ПОИСК ТРЕНДОВ (Используем Google Search)
+// GET: ПОИСК ТРЕНДОВ
 // ==========================================
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -76,8 +72,8 @@ export async function GET(request: Request) {
   const marketNames: Record<string, string> = { brazil: "Бразилия", poland: "Польша", germany: "Германия" };
   const targetMarket = marketNames[market] || market;
   
-  const systemPrompt = `Ты B2B аналитик. Рынок: ${targetMarket}. Сегодня текущий месяц.
-    Используй поиск, чтобы найти 3 самых свежих бизнес-тренда за последние 90 дней.
+  const systemPrompt = `Ты B2B аналитик. Рынок: ${targetMarket}. Сегодня текущий месяц 2026 года.
+    Используй поиск (если доступен), чтобы найти 3 самых свежих бизнес-тренда за последние 90 дней.
     ОТВЕТЬ СТРОГО В ФОРМАТЕ JSON:
     {
       "trends": [
@@ -92,20 +88,18 @@ export async function GET(request: Request) {
     }`;
 
   try {
-    // передаем true (ждем JSON) и true (включаем googleSearch для актуальности)
     const responseText = await generateAIResponse(systemPrompt, true, true); 
-    
-    // Очистка на всякий случай, если Groq вдруг отдаст с маркдауном
     const cleanJson = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return NextResponse.json(JSON.parse(cleanJson));
     
   } catch (error) {
+    // Возвращаем заглушку, чтобы UI не ломался при ошибке 500
     return NextResponse.json({ 
       trends: [{
         trend_name: "ИИ временно недоступен",
-        narrative_hook: "Провайдеры перегружены (Ошибка 429) или исчерпан лимит",
-        market_tension: "Мы уже чиним это",
-        why_now: "Попробуйте через минуту",
+        narrative_hook: "Провайдеры перегружены или исчерпан лимит",
+        market_tension: "Мы уже работаем над этим",
+        why_now: "Попробуйте повторить запрос через пару минут",
         resonance_score: 0
       }] 
     }, { status: 200 });
@@ -113,19 +107,19 @@ export async function GET(request: Request) {
 }
 
 // ==========================================
-// POST: DEEP DIVE, EVALUATE, IMPROVE (Без поиска, для скорости)
+// POST: DEEP DIVE, EVALUATE, IMPROVE
 // ==========================================
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { action, trend, market, text } = body;
+    const { action, trendTitle, market, text, url } = body;
 
     let prompt = "";
 
     switch (action) {
       case "deep_dive":
         prompt = `Действуй как эксперт по B2B-продажам. 
-        Разбери тренд "${trend || 'этот тренд'}" для рынка ${market || 'указанного региона'}. 
+        Разбери тренд "${trendTitle}" для рынка ${market}. 
         Напиши подробный анализ (Deep Dive): 
         1. Суть тренда. 
         2. Как B2B-компании могут это использовать. 
@@ -134,21 +128,21 @@ export async function POST(request: Request) {
         break;
         
       case "evaluate":
-        prompt = `Оцени этот текст для рынка ${market}. 
+        const sourceContext = url ? `контент по ссылке ${url}` : `следующий текст: "${text}"`;
+        prompt = `Оцени этот контент для рынка ${market}. 
         Укажи на культурные несоответствия, ошибки в тональности и дай советы по улучшению. 
-        Текст: "${text}". Ответь в формате Markdown.`;
+        Контент для анализа: ${sourceContext}. Ответь в формате Markdown.`;
         break;
 
       case "improve":
         prompt = `Перепиши этот текст для рынка ${market}, чтобы он звучал максимально нативно для B2B сегмента.
-        Текст: "${text}". Выведи только улучшенный готовый текст.`;
+        Текст: "${text}". Выведи только улучшенный готовый текст без лишних вступлений.`;
         break;
 
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
 
-    // Передаем false (ждем обычный Markdown/текст) и false (поиск тут не нужен, экономим лимиты и время)
     const responseText = await generateAIResponse(prompt, false, false);
 
     return NextResponse.json({ 
@@ -160,7 +154,7 @@ export async function POST(request: Request) {
     console.error("POST Error:", error);
     return NextResponse.json({ 
       error: "Failed to process request",
-      result: "Произошла ошибка при генерации ответа. Возможно, превышены лимиты бесплатного тарифа." 
+      result: "Произошла ошибка при генерации ответа. Возможно, превышены лимиты или контент недоступен." 
     }, { status: 500 });
   }
 }
