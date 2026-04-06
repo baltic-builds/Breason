@@ -10,6 +10,9 @@ jobs:
   check:
     name: Type-check, Lint & Test
     runs-on: ubuntu-latest
+    env:
+      # Убираем предупреждение GitHub о Node 20
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,11 +20,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Обновляемся до 22 (LTS), чтобы соответствовать требованиям GitHub 2026 года
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        # Добавляем установку во всем корневом проекте
+        # Это гарантирует, что все пакеты в монорепозитории увидят зависимости друг друга
+        run: npm install --include=dev --legacy-peer-deps
 
       - name: Type-check
         run: npm run type-check
@@ -36,6 +42,8 @@ jobs:
     name: Build Breason
     runs-on: ubuntu-latest
     needs: check
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,11 +51,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install --include=dev --legacy-peer-deps
 
       - name: Build breason
         run: npm run build:breason
