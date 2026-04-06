@@ -11,7 +11,6 @@ jobs:
     name: Type-check, Lint & Test
     runs-on: ubuntu-latest
     env:
-      # Убираем предупреждение GitHub о Node 20
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
@@ -20,23 +19,23 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          # Обновляемся до 22 (LTS), чтобы соответствовать требованиям GitHub 2026 года
           node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
-        # Добавляем установку во всем корневом проекте
-        # Это гарантирует, что все пакеты в монорепозитории увидят зависимости друг друга
-        run: npm install --include=dev --legacy-peer-deps
+        # Устанавливаем зависимости максимально жестко для всех воркспейсов
+        run: npm install --legacy-peer-deps
 
       - name: Type-check
-        run: npm run type-check
+        # Если используется turbo, иногда помогает запустить проверку 
+        # через корневой контекст, чтобы он видел все связи
+        run: npx turbo run type-check
 
       - name: Lint
-        run: npm run lint
+        run: npx turbo run lint
 
       - name: Test
-        run: npm run test
+        run: npx turbo run test
 
   build:
     name: Build Breason
@@ -55,7 +54,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --include=dev --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: Build breason
         run: npm run build:breason
