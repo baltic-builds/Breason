@@ -10,6 +10,8 @@ jobs:
   check:
     name: Type-check, Lint & Test
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,11 +23,12 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # Мы добавляем --install-links, чтобы все папки внутри проекта "увидели" друг друга
-        run: npm install --legacy-peer-deps --install-links
+        # Ключевое изменение: --workspaces заставит npm зайти в каждую папку 
+        # (ui, types, prompts) и поставить там react и типы.
+        run: npm install --include=dev --legacy-peer-deps --workspaces --if-present
 
       - name: Type-check
-        # Запускаем через npx turbo, чтобы он сам разрулил связи между папками
+        # Используем npx turbo, чтобы он правильно связал пакеты между собой
         run: npx turbo run type-check
 
       - name: Lint
@@ -33,4 +36,23 @@ jobs:
 
       - name: Test
         run: npx turbo run test
-  # ... остальное (job build) оставь как было
+
+  build:
+    name: Build Breason
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --workspaces --if-present
+      - name: Build breason
+        run: npm run build:breason
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # ... остальные ключи
