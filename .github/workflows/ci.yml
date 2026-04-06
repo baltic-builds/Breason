@@ -10,8 +10,6 @@ jobs:
   check:
     name: Type-check, Lint & Test
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,12 +21,11 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # Мы говорим npm установить зависимости во всех воркспейсах принудительно
+        # Мы просто ставим всё из корня, npm сам пойдет по воркспейсам
         run: npm install --legacy-peer-deps
 
       - name: Type-check
-        # Запускаем через turbo, но с флагом --continue, чтобы увидеть все ошибки сразу
-        run: npx turbo run type-check --continue
+        run: npx turbo run type-check
 
       - name: Lint
         run: npx turbo run lint
