@@ -7,29 +7,34 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
+  // Фирменная палитра:
+  // Фиолетовый (Забота): #7C3AED
+  // Воздушный Голубой (Доверие): #0EA5E9
+  // Уверенный Металл (Надежность): #475569
+  // Чистый Белый (Творчество): #FFFFFF
+  // Теплый Оранжевый (Оптимизм): #F97316
+  // Энергичный Лайм (Энергия): #84CC16
+
   const fetchTrends = async () => {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch('/api/resonance-trends', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (!res.ok) throw new Error('404 Not Found');
+      const res = await fetch('/api/resonance-trends', { method: 'POST' });
+      if (!res.ok) throw new Error('Ошибка 404: Маршрут не найден');
       const data = await res.json();
       setResult(data);
-    } catch (error) {
-      setResult({ error: 'Сервис временно недоступен или маршрут не найден.' });
+    } catch (err) {
+      setResult({ error: 'Ошибка при получении данных' });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#FFFFFF] text-[#64748B]">
-      {/* Header */}
+    <div className="min-h-screen bg-[#FFFFFF] text-[#475569]">
+      {/* Header с кликабельным логотипом */}
       <header className="p-6">
-        <Link href="/" className="inline-flex items-center gap-3 group">
+        <Link href="/" className="inline-flex items-center gap-3 group cursor-pointer">
           <div className="bg-[#84CC16] text-[#FFFFFF] w-10 h-10 flex items-center justify-center rounded-lg text-xl font-bold transition-transform group-hover:scale-105">
             B
           </div>
@@ -39,43 +44,41 @@ export default function Page() {
         </Link>
       </header>
 
-      <main className="max-w-2xl mx-auto pt-20 px-6">
-        {/* Индикаторы шагов - теперь яркие и четкие */}
+      <main className="max-w-xl mx-auto pt-16 px-6">
+        {/* Яркие шаги (Энергичный Лайм) */}
         <div className="space-y-4 mb-10">
-          <div className="flex items-center gap-3">
-            <span className="text-[#84CC16] font-black text-lg uppercase tracking-wider">Шаг 1 · Искать</span>
+          <div className="text-[#84CC16] font-black text-xl uppercase tracking-wider">
+            Шаг 1 · Искать
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[#84CC16] font-black text-lg uppercase tracking-wider">Шаг 2 · Проверять</span>
+          <div className="text-[#84CC16] font-black text-xl uppercase tracking-wider">
+            Шаг 2 · Проверять
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[#84CC16] font-black text-lg uppercase tracking-wider">Шаг 3 · Сделать красиво</span>
+          <div className="text-[#84CC16] font-black text-xl uppercase tracking-wider">
+            Шаг 3 · Сделать красиво
           </div>
         </div>
 
+        {/* Кнопка (Теплый Оранжевый) */}
         <button
           onClick={fetchTrends}
           disabled={loading}
-          className="w-full bg-[#F97316] hover:bg-[#7C3AED] text-white font-bold py-4 rounded-2xl transition-colors shadow-lg shadow-orange-200"
+          className="w-full bg-[#F97316] hover:bg-[#7C3AED] text-white font-bold py-4 rounded-2xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
         >
           {loading ? 'AI изучает рынок...' : 'Найти тренды'}
         </button>
 
-        {/* Результаты */}
-        <div className="mt-12">
+        {/* Результат */}
+        <div className="mt-10">
           {loading && (
-            <div className="flex items-center justify-center space-x-2 animate-bounce">
-              <div className="w-2 h-2 bg-[#7DD3FC] rounded-full"></div>
-              <div className="w-2 h-2 bg-[#7DD3FC] rounded-full"></div>
-              <div className="w-2 h-2 bg-[#7DD3FC] rounded-full"></div>
-            </div>
+            <p className="text-[#0EA5E9] font-bold text-center animate-pulse">
+              Анализируем рыночные данные...
+            </p>
           )}
-          
           {result && (
-            <div className={`p-6 rounded-2xl border-2 ${result.error ? 'border-[#F97316]' : 'border-[#7DD3FC] bg-blue-50/30'}`}>
-              <p className="font-medium text-[#64748B]">
-                {result.error || JSON.stringify(result.data)}
-              </p>
+            <div className="p-6 rounded-2xl border-2 border-[#0EA5E9] bg-white">
+               <pre className="text-sm overflow-auto">
+                {JSON.stringify(result, null, 2)}
+               </pre>
             </div>
           )}
         </div>
