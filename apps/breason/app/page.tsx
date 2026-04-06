@@ -5,17 +5,18 @@ import Link from 'next/link';
 
 export default function Page() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [data, setData] = useState<any>(null);
 
   const fetchTrends = async () => {
     setLoading(true);
-    setResult(null);
+    setData(null);
     try {
       const res = await fetch('/api/resonance-trends', { method: 'POST' });
-      const data = await res.json();
-      setResult(data);
-    } catch (e) {
-      setResult({ error: "Ошибка соединения" });
+      if (!res.ok) throw new Error();
+      const result = await res.json();
+      setData(result);
+    } catch (err) {
+      setData({ error: "Ошибка загрузки данных" });
     } finally {
       setLoading(false);
     }
@@ -34,7 +35,6 @@ export default function Page() {
 
       <main className="max-w-xl mx-auto pt-16 px-6">
         <div className="space-y-6 mb-12">
-          {/* Яркий лаймовый для шагов */}
           <h2 className="text-[#84CC16] font-black text-2xl uppercase tracking-tighter">Шаг 1 · Искать</h2>
           <h2 className="text-[#84CC16] font-black text-2xl uppercase tracking-tighter">Шаг 2 · Проверять</h2>
           <h2 className="text-[#84CC16] font-black text-2xl uppercase tracking-tighter">Шаг 3 · Сделать красиво</h2>
@@ -48,11 +48,11 @@ export default function Page() {
           {loading ? 'AI изучает рынок...' : 'Найти тренды'}
         </button>
 
-        <div className="mt-10">
+        <div className="mt-10 min-h-[100px]">
           {loading && <p className="text-[#0EA5E9] font-bold text-center animate-pulse">Анализ данных...</p>}
-          {result && (
-            <div className="p-6 border-2 border-[#0EA5E9] rounded-2xl bg-white shadow-lg">
-              <pre className="text-sm overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+          {data && (
+            <div className="p-6 border-2 border-[#0EA5E9] rounded-2xl bg-white shadow-lg overflow-hidden">
+               <pre className="text-xs text-[#475569]">{JSON.stringify(data, null, 2)}</pre>
             </div>
           )}
         </div>
