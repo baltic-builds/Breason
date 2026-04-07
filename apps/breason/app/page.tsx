@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 // ── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -18,48 +18,10 @@ interface NewsItem {
   resonance_score: number;
 }
 
-interface ToneMap {
-  formal_casual:     number;
-  bold_cautious:     number;
-  technical_benefit: number;
-  abstract_concrete: number;
-  global_native:     number;
-}
-
-interface Rewrite {
-  block:           string;
-  original:        string;
-  suggested:       string;
-  suggested_local: string;
-  reason:          string;
-}
-
-interface EvaluateResult {
-  verdict:               VerdictType;
-  verdict_reason:        string;
-  genericness_score:     number;
-  generic_phrases:       string[];
-  tone_map:              ToneMap;
-  missing_trust_signals: string[];
-  trend_context:         string;
-  rewrites:              Rewrite[];
-  brief_text:            string;
-}
-
-interface ImproveResult {
-  improved_text:  string;
-  improved_local: string;
-  changes:        { what: string; why: string }[];
-  tone_achieved:  string;
-}
-
-interface UrlStatus {
-  type:       "success" | "error";
-  message:    string;
-  domain?:    string;
-  charCount?: number;
-  truncated?: boolean;
-}
+interface ToneMap { formal_casual: number; bold_cautious: number; technical_benefit: number; abstract_concrete: number; global_native: number; }
+interface Rewrite { block: string; original: string; suggested: string; suggested_local: string; reason: string; }
+interface EvaluateResult { verdict: VerdictType; verdict_reason: string; genericness_score: number; generic_phrases: string[]; tone_map: ToneMap; missing_trust_signals: string[]; trend_context: string; rewrites: Rewrite[]; brief_text: string; }
+interface ImproveResult { improved_text: string; improved_local: string; changes: { what: string; why: string }[]; tone_achieved: string; }
 
 // ── Константы ─────────────────────────────────────────────────────────────────
 
@@ -83,7 +45,25 @@ const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: stri
 
 const DEFAULT_COPY = `Unlock efficiency with our all-in-one AI platform. It's a revolutionary game-changer for your enterprise. Start your free trial today and 10x your productivity seamlessly!`;
 
-// ── Стили (с типизацией через className) ──────────────────────────────────────
+// Новые нейтральные статусы (убираем технические детали от клиента)
+const LOADING_MSGS: Record<StepKey, string[]> = {
+  search:   ["Смотрим рынок...", "Опрашиваем экспертов...", "Звоним инсайдерам...", "Готовим ответ..."],
+  evaluate: ["Анализируем культурный код...", "Ищем сигналы доверия...", "Считаем индекс клише...", "Генерируем советы..."],
+  improve:  ["Применяем профиль рынка...", "Переписываем текст...", "Полируем нативный тон..."],
+};
+
+const FUNNY_QUOTES = [
+  "Работайте на скупого, он платит дважды",
+  "Встречайтесь со стоматологом. Это выгодно",
+  "Не хватает на отпуск? Отдыхайте на работе",
+  "Если хотите удвоить деньги, то сложите их пополам",
+  "Зарабатывайте больше, и доход вырастет",
+  "Если на карте нет денег, то платите наличными",
+  "Тратьте деньги с умом: сначала чужие, а только потом – свои"
+];
+
+// ── Стили ─────────────────────────────────────────────────────────────────────
+// Обновлено: btn-primary и btn-search теперь используют var(--orange)
 const STYLE = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
 
@@ -122,9 +102,12 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
 .market-card-flag { font-size: 32px; display: block; margin-bottom: 8px; }
 .market-card-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
 .market-card-desc { font-size: 11px; color: var(--t3); line-height: 1.4; }
-.btn-primary { width: 100%; padding: 14px; background: var(--violet); color: #fff; border: none; border-radius: var(--r-sm); font-size: 14px; font-weight: 700; cursor: pointer; transition: 0.15s; display: flex; justify-content: center; align-items: center; gap: 8px; }
-.btn-primary:hover:not(:disabled) { background: var(--violet-d); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(124,58,237,0.25); }
+
+/* ОРАНЖЕВЫЕ КНОПКИ */
+.btn-primary { width: 100%; padding: 14px; background: var(--orange); color: #fff; border: none; border-radius: var(--r-sm); font-size: 14px; font-weight: 700; cursor: pointer; transition: 0.15s; display: flex; justify-content: center; align-items: center; gap: 8px; }
+.btn-primary:hover:not(:disabled) { background: var(--orange-d); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(249,115,22,0.25); }
 .btn-primary:disabled { background: var(--t3); cursor: not-allowed; }
+
 .btn-action { padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--t1); cursor: pointer; transition: 0.15s; }
 .btn-action:hover { background: var(--bg); border-color: var(--violet); color: var(--violet); }
 .btn-action.active { background: var(--violet); color: #fff; border-color: var(--violet); }
@@ -162,57 +145,68 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
 .rw-block.local { background: var(--violet-a); border-color: rgba(124,58,237,0.2); color: var(--violet); font-weight: 500; }
 `;
 
-// ── Индикаторы прогресса (Simulated Streaming) ───────────────────────────────
-const ProgressStream = ({ steps, activeIdx }: { steps: string[], activeIdx: number }) => (
-  <div className="stream-loader">
-    {steps.map((s, i) => {
-      if (i > activeIdx) return null;
-      const isCurrent = i === activeIdx;
-      return (
-        <div key={i} className="stream-line" style={{ opacity: isCurrent ? 1 : 0.5 }}>
-          <span>{isCurrent ? <span className="blink">▶</span> : "✓"}</span>
-          <span>{s}</span>
-        </div>
-      );
-    })}
+// ── Индикаторы прогресса (Смешные цитаты добавлены сюда) ───────────────────
+const ProgressStream = ({ steps, activeIdx, quoteIdx }: { steps: string[], activeIdx: number, quoteIdx: number }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="stream-loader">
+      {steps.map((s, i) => {
+        if (i > activeIdx) return null;
+        const isCurrent = i === activeIdx;
+        return (
+          <div key={i} className="stream-line" style={{ opacity: isCurrent ? 1 : 0.5 }}>
+            <span>{isCurrent ? <span className="blink">▶</span> : "✓"}</span>
+            <span>{s}</span>
+          </div>
+        );
+      })}
+    </div>
+    <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: 13, color: 'var(--t3)' }}>
+      💡 {FUNNY_QUOTES[quoteIdx]}
+    </div>
   </div>
 );
 
 // ── Главный Компонент ────────────────────────────────────────────────────────
 export default function BreasonApp() {
-  // Navigation & State
   const [step, setStep] = useState<StepKey>("search");
   const [market, setMarket] = useState<MarketKey>("germany");
   const [inputMode, setInputMode] = useState<InputMode>("text");
   
-  // Shared Context & Text
   const [globalText, setGlobalText] = useState(DEFAULT_COPY);
   const [selectedTrend, setSelectedTrend] = useState<string>("");
   const [styleModifier, setStyleModifier] = useState<StyleModifier>("none");
 
-  // API States
   const [loading, setLoading] = useState(false);
   const [loadingStepIdx, setLoadingStepIdx] = useState(0);
+  const [quoteIdx, setQuoteIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Results
   const [newsItems, setNewsItems] = useState<NewsItem[] | null>(null);
+  const [deepDiveData, setDeepDiveData] = useState<Record<string, string>>({}); // Хранение ответов "Узнать больше"
+  
   const [evalResult, setEvalResult] = useState<EvaluateResult | null>(null);
   const [improveResult, setImproveResult] = useState<ImproveResult | null>(null);
   
-  // URL Input
   const [urlInput, setUrlInput] = useState("");
 
-  // Simulated Streaming Timer
+  // Таймеры для загрузки и смешных цитат
   useEffect(() => {
-    let interval: any;
+    let loaderInterval: any;
+    let quoteInterval: any;
+    
     if (loading) {
       setLoadingStepIdx(0);
-      interval = setInterval(() => {
-        setLoadingStepIdx((prev) => Math.min(prev + 1, 4));
+      setQuoteIdx(Math.floor(Math.random() * FUNNY_QUOTES.length));
+      
+      loaderInterval = setInterval(() => {
+        setLoadingStepIdx((prev) => Math.min(prev + 1, 3));
       }, 1500);
+
+      quoteInterval = setInterval(() => {
+        setQuoteIdx((prev) => (prev + 1) % FUNNY_QUOTES.length);
+      }, 4000);
     }
-    return () => clearInterval(interval);
+    return () => { clearInterval(loaderInterval); clearInterval(quoteInterval); }
   }, [loading]);
 
   const resetToHome = () => {
@@ -224,8 +218,6 @@ export default function BreasonApp() {
     setGlobalText(DEFAULT_COPY);
   };
 
-  // ── Обработчики (Workflows) ─────────────────────────────────────────────────
-
   const handleFetchUrl = async () => {
     if (!urlInput) return;
     setLoading(true);
@@ -236,7 +228,7 @@ export default function BreasonApp() {
       });
       const data = await res.json();
       if (data.text) setGlobalText(data.text);
-      else alert("Ошибка парсинга URL");
+      else alert(data.error || "Ошибка парсинга URL");
     } catch { alert("Ошибка сети"); }
     finally { setLoading(false); }
   };
@@ -249,6 +241,24 @@ export default function BreasonApp() {
       setNewsItems(data.items || []);
     } catch { setError("Не удалось загрузить тренды."); }
     finally { setLoading(false); }
+  };
+
+  const handleDeepDive = async (headline: string) => {
+    setDeepDiveData(prev => ({ ...prev, [headline]: "Изучаем инсайды..." }));
+    try {
+      const res = await fetch("/api/resonance-trends", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "deep_dive", market, trendContext: headline })
+      });
+      const data = await res.json();
+      if (data.analysis) {
+        setDeepDiveData(prev => ({ ...prev, [headline]: data.analysis }));
+      } else {
+        setDeepDiveData(prev => ({ ...prev, [headline]: "Ошибка: не удалось сформировать аналитику." }));
+      }
+    } catch {
+      setDeepDiveData(prev => ({ ...prev, [headline]: "Ошибка соединения." }));
+    }
   };
 
   const handleUseTrend = (headline: string) => {
@@ -280,13 +290,7 @@ export default function BreasonApp() {
     try {
       const res = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          action: "improve", 
-          text: globalText, 
-          market, 
-          context: selectedTrend,
-          styleModifier 
-        }),
+        body: JSON.stringify({ action: "improve", text: globalText, market, context: selectedTrend, styleModifier }),
       });
       const data = await res.json();
       if (data.improved_text) setImproveResult(data);
@@ -304,10 +308,7 @@ export default function BreasonApp() {
     }
   };
 
-  // ── Рендер вспомогательных UI элементов ─────────────────────────────────────
-
   const renderToneBar = (labelL: string, labelR: string, val: number) => {
-    // API returns -5 to 5. Map to 0% to 100%
     const pct = Math.max(0, Math.min(100, ((val + 5) / 10) * 100));
     return (
       <div className="tone-row">
@@ -319,8 +320,6 @@ export default function BreasonApp() {
       </div>
     );
   };
-
-  // ── Рендер Шагов ────────────────────────────────────────────────────────────
 
   const renderStepSearch = () => (
     <div className="stack">
@@ -340,7 +339,7 @@ export default function BreasonApp() {
         </button>
       </div>
 
-      {loading && <ProgressStream steps={["Подключение к Serper API...", "Сбор данных за 90 дней...", "Извлечение бизнес-инсайтов...", "Формирование дайджеста Gemini..."]} activeIdx={loadingStepIdx} />}
+      {loading && <ProgressStream steps={LOADING_MSGS.search} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
       {!loading && error && <div style={{ color: 'var(--red)' }}>{error}</div>}
 
       {!loading && newsItems && (
@@ -353,9 +352,19 @@ export default function BreasonApp() {
               </div>
               <h3 className="news-headline">{item.headline}</h3>
               <p className="news-summary">{item.summary}</p>
-              <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--border-xs)' }}>
-                <button className="btn-action" style={{ width: '100%' }} onClick={() => handleUseTrend(item.headline)}>
-                  → Проверить мой текст под этот тренд
+              
+              {deepDiveData[item.headline] && (
+                <div style={{ marginTop: 12, padding: 12, background: 'var(--bg)', borderRadius: 8, fontSize: 13, color: 'var(--t2)', borderLeft: '3px solid var(--violet)' }}>
+                  {deepDiveData[item.headline]}
+                </div>
+              )}
+
+              <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid var(--border-xs)', display: 'flex', gap: 8 }}>
+                <button className="btn-action" style={{ flex: 1, padding: '10px 8px', fontSize: 11 }} onClick={() => handleUseTrend(item.headline)}>
+                  → Мой текст под тренд
+                </button>
+                <button className="btn-action" style={{ flex: 1, padding: '10px 8px', fontSize: 11 }} onClick={() => handleDeepDive(item.headline)}>
+                  🔍 Узнать больше
                 </button>
               </div>
             </div>
@@ -398,7 +407,7 @@ export default function BreasonApp() {
       </div>
 
       <div className="stack">
-        {loading && <ProgressStream steps={["Синхронизация профиля рынка...", "Вычисление индекса клише...", "Построение карты тона...", "Поиск сигналов доверия..."]} activeIdx={loadingStepIdx} />}
+        {loading && <ProgressStream steps={LOADING_MSGS.evaluate} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
         {!loading && error && <div style={{ color: 'var(--red)' }}>{error}</div>}
         
         {!loading && !evalResult && !error && (
@@ -473,7 +482,6 @@ export default function BreasonApp() {
                 ))}
               </div>
 
-              {/* Sticky Action - Улучшить с учетом правок */}
               <div className="sticky-footer">
                 <button className="btn-sticky" onClick={handleProceedToImprove}>
                   ✨ Улучшить с учётом этих правок →
@@ -490,10 +498,8 @@ export default function BreasonApp() {
     <div className="split">
       <div className="stack" style={{ position: 'sticky', top: 80 }}>
         <div className="card">
-          <p className="field-label">Текст для ИИ-редактуры</p>
-          <textarea className="inp" rows={8} value={globalText} onChange={e => setGlobalText(e.target.value)} />
-          
-          <p className="field-label" style={{ marginTop: 16 }}>Стиль (Reduck Prompts)</p>
+          {/* Пресеты перенесены НАВЕРХ */}
+          <p className="field-label">Стиль (Reduck Prompts)</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             <button className={`btn-action ${styleModifier === "none" ? "active" : ""}`} onClick={() => setStyleModifier("none")}>Стандартно (по профилю)</button>
             <button className={`btn-action ${styleModifier === "friendly" ? "active" : ""}`} onClick={() => setStyleModifier("friendly")}>🤝 Сделать дружелюбнее</button>
@@ -501,14 +507,17 @@ export default function BreasonApp() {
             <button className={`btn-action ${styleModifier === "concise" ? "active" : ""}`} onClick={() => setStyleModifier("concise")}>✂️ Сделать лаконичным</button>
           </div>
 
-          <button className="btn-primary" onClick={handleImprove} disabled={loading || !globalText.trim()}>
+          <p className="field-label" style={{ marginTop: 16 }}>Текст для ИИ-редактуры</p>
+          <textarea className="inp" rows={8} value={globalText} onChange={e => setGlobalText(e.target.value)} />
+          
+          <button className="btn-primary" onClick={handleImprove} disabled={loading || !globalText.trim()} style={{ marginTop: 16 }}>
             {loading ? "Генерация..." : "🪄 Применить магию ИИ"}
           </button>
         </div>
       </div>
 
       <div className="stack">
-        {loading && <ProgressStream steps={["Инициализация модели...", "Применение стилевых инструкций...", "Локализация словаря...", "Синтез финального текста..."]} activeIdx={loadingStepIdx} />}
+        {loading && <ProgressStream steps={LOADING_MSGS.improve} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
         {!loading && error && <div style={{ color: 'var(--red)' }}>{error}</div>}
         
         {!loading && !improveResult && !error && (
