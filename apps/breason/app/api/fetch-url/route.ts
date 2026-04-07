@@ -23,11 +23,18 @@ export async function POST(request: Request) {
     if (!res.ok) throw new Error(`Jina Reader HTTP ${res.status}`);
     
     const data = await res.json();
-    const content = data.data.content;
+    
+    // БЕЗОПАСНЫЙ ПАРСИНГ: Учитываем разные форматы ответа Jina AI
+    const content = data?.data?.content || data?.content || data?.text || "";
+    
+    if (typeof content !== 'string' || content.trim() === '') {
+      throw new Error("Не удалось извлечь текстовый контент.");
+    }
+
     const domain = new URL(url).hostname;
 
     return NextResponse.json({
-      text: content.slice(0, 15000), // Защита от переполнения токенов (отдаем первые 15к символов)
+      text: content.slice(0, 15000), // Защита от переполнения токенов
       domain: domain,
       charCount: content.length,
       truncated: content.length > 15000
@@ -35,6 +42,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("❌ Fetch URL Error:", error.message);
-    return NextResponse.json({ error: "Не удалось извлечь текст страницы. Возможно, сайт блокирует ботов." }, { status: 500 });
+    return NextResponse.json({ error: "Не удалось извлечь текст страницы. Сайт защищен или недоступен." }, { status: 500 });
   }
 }
