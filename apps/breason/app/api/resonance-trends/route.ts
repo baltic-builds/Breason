@@ -5,15 +5,14 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-// Убираем динамический поиск моделей (антипаттерн для Serverless, вызывающий задержки cold start)
-const GEMINI_MODEL     = process.env.GEMINI_MODEL || "gemini-1.5-flash"; 
+// Исправлена модель на 3.1
+const GEMINI_MODEL     = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite-preview"; 
 const GROQ_MODEL       = "llama-3.3-70b-versatile";
 const OPENROUTER_MODEL = "google/gemini-2.0-flash-lite-preview-02-05:free";
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
 function parseJson(text: string): any {
   try {
-    // Жёсткая очистка от markdown и лишнего текста до/после JSON
     const clean = text.replace(/```(json)?\n?/g, '').replace(/```\n?/g, '').trim();
     const match = clean.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (!match) throw new Error("No JSON object found in AI response");
@@ -42,8 +41,6 @@ async function fetchRealNews(market: string, queries: string[]): Promise<SerperN
   }
 
   const allResults: SerperNewsItem[] = [];
-  
-  // Оптимизация: склеиваем запросы через OR, чтобы не спамить API (бережем rate limits)
   const combinedQuery = queries.slice(0, 2).join(" OR ");
 
   try {
@@ -197,7 +194,7 @@ ${newsContext}
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// POST — Evaluate + Improve
+// POST — Evaluate + Improve + Deep Dive
 // ════════════════════════════════════════════════════════════════════════════
 function buildEvaluatePrompt(text: string, market: string, trendContext?: string): string {
   const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
@@ -272,20 +269,37 @@ ${styleInstruction ? `\nЗАДАЧА ПО СТИЛЮ (REDUCK): ${styleInstructio
   `.trim();
 }
 
+function buildDeepDivePrompt(trendTitle: string, market: string): string {
+  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
+  return `
+Ты эксперт по B2B-рынкам. Опиши подробнее тренд "${trendTitle}" для региона ${p.label}.
+Объясни, как B2B компаниям адаптировать свои продажи под этот тренд. 
+Отвечай ТОЛЬКО на русском языке, в 3-4 предложения. 
+ОТВЕТЬ СТРОГО В JSON:
+{
+  "analysis": "Твой детальный инсайт (plain text)"
+}
+  `.trim();
+}
+
 export async function POST(request: Request) {
   try {
     const { action, text, market, context, trendContext, styleModifier } = await request.json();
 
-    if (!text || typeof text !== 'string' || text.trim().length < 10) {
-      return NextResponse.json({ error: "Текст обязателен (минимум 10 символов)" }, { status: 400 });
-    }
     if (!market || !(market in MARKET_PROFILES)) {
       return NextResponse.json({ error: "Некорректный рынок." }, { status: 400 });
     }
 
-    const prompt = action === "improve"
-      ? buildImprovePrompt(text, market, context, styleModifier)
-      : buildEvaluatePrompt(text, market, trendContext);
+    let prompt = "";
+    if (action === "improve") {
+      prompt = buildImprovePrompt(text, market, context, styleModifier);
+    } else if (action === "evaluate") {
+      prompt = buildEvaluatePrompt(text, market, trendContext);
+    } else if (action === "deep_dive") {
+      prompt = buildDeepDivePrompt(trendContext, market);
+    } else {
+      return NextResponse.json({ error: "Неизвестное действие." }, { status: 400 });
+    }
 
     const data = await callAI(prompt);
     return NextResponse.json(data);
