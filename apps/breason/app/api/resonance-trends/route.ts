@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite-preview";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-lite";
 const GROQ_MODEL   = "llama-3.3-70b-versatile";
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
@@ -48,26 +48,21 @@ async function fetchRealNews(market: string, queries: string[], keyword?: string
         q: combinedQuery,
         gl: market === "germany" ? "de" : market === "poland" ? "pl" : "br",
         hl: market === "germany" ? "de" : market === "poland" ? "pl" : "pt",
-        num: 15,
-        tbs: "qdr:m3",
+        num: 15, tbs: "qdr:m3",
       }),
       signal: AbortSignal.timeout(8000),
     });
-
     if (!res.ok) throw new Error(`Serper ${res.status}`);
     const data = await res.json();
     const news: SerperNewsItem[] = (data.news || []).map((item: any) => ({
       title: item.title || "", snippet: item.snippet || "",
       source: item.source || "", date: item.date || "", link: item.link || "",
     }));
-
     const seen = new Set<string>();
     return news.filter(item => {
       if (!item.title || seen.has(item.title)) return false;
-      seen.add(item.title);
-      return true;
+      seen.add(item.title); return true;
     }).slice(0, 20);
-
   } catch (e: any) {
     console.warn(`⚠️ Serper failed: ${e.message}`);
     return [];
@@ -110,7 +105,6 @@ async function callAI(prompt: string): Promise<any> {
   } catch (e: any) {
     console.warn(`⚠️ Gemini failed: ${e.message}`);
   }
-
   try {
     const raw = await groqFallback(prompt);
     return parseJson(raw);
@@ -155,7 +149,6 @@ const MARKET_PROFILES: Record<string, {
 
 const TARGET_TOPICS = ["B2B Продажи и CRM", "Финансы и Консалтинг", "Ритейл и E-commerce", "IT и Разработка"];
 
-// Self-Healing: Гарантируем ровно 3 тренда на каждую категорию
 function normalizeTrends(items: any[]): any[] {
   const grouped: Record<string, any[]> = {};
   TARGET_TOPICS.forEach(t => grouped[t] = []);
@@ -169,28 +162,188 @@ function normalizeTrends(items: any[]): any[] {
   const finalItems: any[] = [];
   TARGET_TOPICS.forEach(t => {
     const topicItems = grouped[t];
-    // Если трендов не хватает, дополняем системными плейсхолдерами, чтобы UI не ломался
-    while(topicItems.length < 3) {
-       topicItems.push({
-           headline: `Адаптация процессов в секторе ${t.split(' ')[0]}`,
-           topic: t,
-           category: "Оптимизация",
-           summary: "Индустрия адаптируется к новым экономическим реалиям. Компании обновляют свои IT-решения для сохранения конкурентоспособности.",
-           business_impact: "Требует пересмотра текущих стратегий и внедрения актуальных стандартов."
-       });
+    while (topicItems.length < 3) {
+      topicItems.push({
+        headline: `Адаптация процессов в секторе ${t.split(' ')[0]}`,
+        topic: t, category: "Оптимизация",
+        summary: "Индустрия адаптируется к новым экономическим реалиям.",
+        business_impact: "Требует пересмотра текущих стратегий."
+      });
     }
     finalItems.push(...topicItems.slice(0, 3));
   });
-
   return finalItems;
 }
 
-// ── Построители промптов ──────────────────────────────────────────────────────
+// ── Системные промпты (экспортируемые шаблоны) ───────────────────────────────
+// Шаблоны принимают плейсхолдеры вида {{MARKET}}, {{DATE}} и т.д.
+// Фронт заменяет плейсхолдеры перед отправкой или использует промпт as-is
 
-function buildSearchPrompt(market: string, newsContext: string, today: string, ninetyDaysAgo: string, keyword?: string, customPrompt?: string): string {
+export const SYSTEM_PROMPT_TEMPLATES = {
+  search: `Ты старший аналитик B2B-рынков. Составь деловой дайджест для рынка {{MARKET}}.
+СЕГОДНЯ: {{TODAY}}. Период: с {{NINETY_DAYS_AGO}}.
+
+{{CUSTOM_INSTRUCTIONS}}
+
+КОНТЕКСТ ИЗ СМИ:
+---
+{{NEWS_CONTEXT}}
+---
+
+ЗАДАЧА: Сгенерируй ровно 12 актуальных B2B-трендов. СТРОГО по 3 тренда на каждую из 4 тем: B2B Продажи и CRM, Финансы и Консалтинг, Ритейл и E-commerce, IT и Разработка.
+{{KEYWORD_FOCUS}}
+
+КРИТИЧЕСКИЕ ПРАВИЛА:
+1. Весь текст ТОЛЬКО на русском языке.
+2. Только plain text. Никакого Markdown.
+3. Не упоминай COVID.
+
+Ответь ТОЛЬКО валидным JSON:
+{
+  "market": "{{MARKET}}",
+  "generated_at": "{{TODAY}}",
+  "items": [
+    {
+      "headline": "Краткий заголовок",
+      "topic": "Строго одна из тем: B2B Продажи и CRM, Финансы и Консалтинг, Ритейл и E-commerce, IT и Разработка",
+      "category": "Подкатегория",
+      "summary": "2 предложения сути",
+      "business_impact": "Следствие для B2B продаж"
+    }
+  ]
+}`,
+
+  evaluate: `Ты старший аудитор B2B-локализации. Проанализируй текст для рынка {{MARKET}}.
+ПРОФИЛЬ: Тон: {{TONE}} | Доверие: {{TRUST}} | Красные флаги: {{RED_FLAGS}}
+{{TREND_CONTEXT}}
+{{CUSTOM_INSTRUCTIONS}}
+
+ТЕКСТ:
+"""{{TEXT}}"""
+
+Ответь ТОЛЬКО JSON:
+{
+  "verdict": "PASS" | "SUSPICIOUS" | "FOREIGN",
+  "verdict_reason": "Одно предложение (RU)",
+  "genericness_score": <0-100>,
+  "generic_phrases": ["фраза 1", "фраза 2"],
+  "tone_map": {
+    "formal_casual": <-5..5>,
+    "bold_cautious": <-5..5>,
+    "technical_benefit": <-5..5>,
+    "abstract_concrete": <-5..5>,
+    "global_native": <-5..5>
+  },
+  "missing_trust_signals": ["сигнал 1"],
+  "rewrites": [
+    {
+      "block": "Заголовок/CTA (RU)",
+      "original": "фрагмент исходника",
+      "suggested": "EN rewrite",
+      "suggested_local": "Rewrite in {{LANGUAGE}} (PLAIN TEXT)",
+      "reason": "Почему лучше (RU)"
+    }
+  ]
+}`,
+
+  improve_icebreaker: `Ты — Senior B2B Copywriter на рынке: {{MARKET}}.
+Перепиши текст холодного сообщения.
+ХУК: Используй тренд "{{TREND_NAME}}". Боль рынка: "{{TREND_TENSION}}".
+СТРУКТУРА: 1. Тема. 2. Хук. 3. Ценность. 4. Пруф. 5. Мягкий CTA.
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+СИСТЕМНОЕ ОГРАНИЧЕНИЕ: Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_thought_leader: `Ты — топовый B2B Influencer на рынке: {{MARKET}}.
+Трансформируй текст в пост.
+ХУК: Вплети тренд "{{TREND_NAME}}" (Боль: "{{TREND_TENSION}}").
+СТРУКТУРА: Провокационный хук, раскрытие проблемы, решение, открытый вопрос к аудитории.
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_landing_page: `Ты — продуктовый маркетолог на рынке: {{MARKET}}.
+Перепиши описание продукта под менталитет рынка, опираясь на тренд: "{{TREND_NAME}}".
+СТРУКТУРА:
+Главное обещание.
+Как мы решаем боль.
+Три прагматичных преимущества (буллиты).
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_follow_up: `Ты — Account Executive на рынке: {{MARKET}}.
+Напиши фоллоу-ап.
+ХУК: Упомяни тренд "{{TREND_NAME}}" как причину для контакта и покажи решение боли "{{TREND_TENSION}}".
+СТРУКТУРА: 1 абзац. Максимум 4-5 предложений.
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_standard: `Ты эксперт B2B-копирайтер для рынка {{MARKET}}. Перепиши текст нативно. Учитывай тренд: {{TREND_NAME}}.
+ПРОФИЛЬ: Тон: {{TONE}} | Доверие: {{TRUST}} | Избегать: {{RED_FLAGS}}
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+};
+
+// ── Построители промптов (принимают пользовательские промпты, если переданы) ──
+
+function buildSearchPrompt(
+  market: string, newsContext: string,
+  today: string, ninetyDaysAgo: string,
+  keyword?: string, userPrompt?: string,
+): string {
+  // Если userPrompt — полный промпт от пользователя, используем его как основу,
+  // иначе берём системный шаблон и подставляем переменные
   const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  const customClause = customPrompt?.trim() ? `\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${customPrompt.trim()}\n` : "";
   const keywordClause = keyword?.trim() ? `ФОКУС: Приоритизируй тренды, связанные с "${keyword.trim()}".` : "";
+  const customClause  = userPrompt?.trim() ? `\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${userPrompt.trim()}\n` : "";
 
   return `
 Ты старший аналитик B2B-рынков. Составь деловой дайджест для рынка ${p.label}.
@@ -225,9 +378,9 @@ ${keywordClause}
   `.trim();
 }
 
-function buildEvaluatePrompt(text: string, market: string, trendContext?: string, customPrompt?: string): string {
+function buildEvaluatePrompt(text: string, market: string, trendContext?: string, userPrompt?: string): string {
   const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  const customClause = customPrompt?.trim() ? `\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ: ${customPrompt.trim()}\n` : "";
+  const customClause = userPrompt?.trim() ? `\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ: ${userPrompt.trim()}\n` : "";
 
   return `
 Ты старший аудитор B2B-локализации. Проанализируй текст для рынка ${p.label}.
@@ -264,10 +417,14 @@ ${customClause}
   `.trim();
 }
 
-function buildImprovePrompt(text: string, market: string, preset: string, trendContext?: any, customPrompt?: string): string {
+function buildImprovePrompt(
+  text: string, market: string, preset: string,
+  trendContext?: any, userPrompt?: string,
+): string {
   const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  const trendName = trendContext?.headline || "Оптимизация корпоративных систем";
+  const trendName    = trendContext?.headline     || "Оптимизация корпоративных систем";
   const trendTension = trendContext?.business_impact || "Бизнес ищет снижение издержек";
+  const customClause = userPrompt?.trim() ? `\nДОП. ИНСТРУКЦИИ: ${userPrompt.trim()}\n` : "";
 
   const PRESET_TEMPLATES: Record<string, string> = {
     icebreaker: `Ты — Senior B2B Copywriter на рынке: ${p.label}. 
@@ -292,11 +449,10 @@ function buildImprovePrompt(text: string, market: string, preset: string, trendC
 ХУК: Упомяни тренд "${trendName}" как причину для контакта и покажи решение боли "${trendTension}".
 СТРУКТУРА: 1 абзац. Максимум 4-5 предложений.`,
 
-    standard: `Ты эксперт B2B-копирайтер для рынка ${p.label}. Перепиши текст нативно. Учитывай тренд: ${trendName}.`
+    standard: `Ты эксперт B2B-копирайтер для рынка ${p.label}. Перепиши текст нативно. Учитывай тренд: ${trendName}.`,
   };
 
-  let basePrompt = PRESET_TEMPLATES[preset] || PRESET_TEMPLATES["standard"];
-  const customClause = customPrompt?.trim() ? `\nДОП. ИНСТРУКЦИИ: ${customPrompt.trim()}\n` : "";
+  const basePrompt = PRESET_TEMPLATES[preset] || PRESET_TEMPLATES["standard"];
 
   return `
 ${basePrompt}
@@ -306,8 +462,7 @@ ${customClause}
 """${text}"""
 
 СИСТЕМНОЕ ОГРАНИЧЕНИЕ (КРИТИЧЕСКИ ВАЖНО):
-Ты ОБЯЗАН вернуть результат СТРОГО в формате JSON.
-КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать Markdown (никаких #, *, **). Только обычный текст (plain text) с переносами строк. Не пиши вводных фраз.
+Вернуть результат СТРОГО в формате JSON. НИКАКОГО Markdown. Только plain text.
 
 {
   "improved_text": "Полная версия на EN",
@@ -323,8 +478,21 @@ ${customClause}
 // ════════════════════════════════════════════════════════════════════════════
 // Роуты API
 // ════════════════════════════════════════════════════════════════════════════
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const action = searchParams.get('action');
+
+  // GET /api/resonance-trends?action=prompts
+  // Возвращает все системные промпты для редактора на фронте
+  if (action === 'prompts') {
+    return NextResponse.json({
+      prompts: SYSTEM_PROMPT_TEMPLATES,
+      promptKeys: Object.keys(SYSTEM_PROMPT_TEMPLATES),
+    });
+  }
+
+  // GET /api/resonance-trends?market=germany (backward compat)
   return handleSearch(searchParams.get('market') || 'germany', searchParams.get('keyword') || '');
 }
 
@@ -359,23 +527,24 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("❌ POST Error:", error.message);
-    return NextResponse.json({ error: "Сервисы генерации временно недоступны.", details: error.message }, { status: 503 });
+    return NextResponse.json(
+      { error: "Сервисы генерации временно недоступны.", details: error.message },
+      { status: 503 },
+    );
   }
 }
 
-async function handleSearch(market: string, keyword?: string, customPrompt?: string): Promise<NextResponse> {
+async function handleSearch(market: string, keyword?: string, userPrompt?: string): Promise<NextResponse> {
   const { today, ninetyDaysAgo } = getDateRange();
   const profile = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
 
   const realNews    = await fetchRealNews(market, profile.searchQueries, keyword);
   const newsContext = formatNewsForPrompt(realNews);
-  const prompt      = buildSearchPrompt(market, newsContext, today, ninetyDaysAgo, keyword, customPrompt);
+  const prompt      = buildSearchPrompt(market, newsContext, today, ninetyDaysAgo, keyword, userPrompt);
 
   try {
-    const data = await callAI(prompt);
-    let items = data?.items ?? (Array.isArray(data) ? data : []);
-    
-    // Self-healing: выравниваем массив до идеальной сетки 4x3
+    const data            = await callAI(prompt);
+    const items           = data?.items ?? (Array.isArray(data) ? data : []);
     const normalizedItems = normalizeTrends(items);
 
     return NextResponse.json({
@@ -387,10 +556,8 @@ async function handleSearch(market: string, keyword?: string, customPrompt?: str
 
   } catch (error: any) {
     return NextResponse.json({
-      market: profile.label,
-      generated_at: today,
-      keyword_focus: keyword || "",
-      items: normalizeTrends([]) // Вернет плейсхолдеры, чтобы UI не сломался
-    }, { status: 200 }); 
+      market: profile.label, generated_at: today, keyword_focus: keyword || "",
+      items: normalizeTrends([]),
+    }, { status: 200 });
   }
 }
