@@ -9,7 +9,9 @@ export async function POST(req: Request) {
   try {
     const { action, market, text } = await req.json();
     
-    if (!market) return NextResponse.json({ error: "Market is required" }, { status: 400 });
+    if (!market) {
+      return NextResponse.json({ error: "Market is required" }, { status: 400 });
+    }
 
     const prompt = buildPrompt(action as PromptKey, market as MarketKey, text);
     
@@ -21,13 +23,17 @@ export async function POST(req: Request) {
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
     
+    // Robust parsing: удаляем Markdown блоки, если они есть
     const cleanJson = responseText.replace(/```json|```/g, "").trim();
     const data = JSON.parse(cleanJson);
     
     return NextResponse.json(data);
 
   } catch (error: any) {
-    console.error("API Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("❌ API Error:", error);
+    return NextResponse.json({ 
+      error: "AI Service Error", 
+      details: error.message 
+    }, { status: 500 });
   }
 }
