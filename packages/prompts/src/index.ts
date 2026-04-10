@@ -1,82 +1,48 @@
-import type { MarketKey, CustomPrompts, PromptKey } from "@breason/types";
+import { MarketKey, PromptKey } from "@breason/types";
 
-export const MARKET_PROFILES: Record<string, {
-  label: string; labelRu: string; flag: string; language: string;
-  searchQueries: string[];
-  tone: string; trust: string[]; redFlags: string[];
-}> = {
+export const MARKET_PROFILES: Record<MarketKey, { labelRu: string; flag: string; lang: string; tone: string; queries: string[] }> = {
   germany: {
-    label: "Germany", labelRu: "Германия", flag: "🇩🇪", language: "German",
-    searchQueries: ["B2B Software Trends Deutschland 2025", "Digitalisierung Mittelstand"],
-    tone: "Формальный, точный, ориентированный на процессы, скептичный к хайпу",
-    trust: ["GDPR", "ISO", "SLA", "Локальный хостинг"],
-    redFlags: ["revolutionary", "game-changer", "seamless"],
+    labelRu: "Германия", flag: "🇩🇪", lang: "German",
+    tone: "Формальный, точный, процессный, без пустых обещаний",
+    queries: ["B2B Software Trends Germany 2025", "Mittelstand digitalization news"]
   },
   poland: {
-    label: "Poland", labelRu: "Польша", flag: "🇵🇱", language: "Polish",
-    searchQueries: ["trendy B2B Polska 2025", "SaaS rynek Polska"],
-    tone: "Прямой, прагматичный, ценит цифры и прозрачность",
-    trust: ["Кейсы", "ROI", "Прозрачные цены"],
-    redFlags: ["empty promises", "vague benefits"],
+    labelRu: "Польша", flag: "🇵🇱", lang: "Polish",
+    tone: "Прагматичный, прямой, ориентированный на ROI и конкретику",
+    queries: ["B2B trends Poland 2025", "Polish SaaS market news"]
   },
   brazil: {
-    label: "Brazil", labelRu: "Бразилия", flag: "🇧🇷", language: "Portuguese",
-    searchQueries: ["tendências B2B Brasil 2025"],
-    tone: "Теплый, человечный, акцент на отношениях",
-    trust: ["Поддержка на португальском", "WhatsApp", "LGPD"],
-    redFlags: ["холодный корпоративный тон"],
-  },
+    labelRu: "Бразилия", flag: "🇧🇷", lang: "Portuguese",
+    tone: "Теплый, человекоцентричный, акцент на долгосрочных отношениях",
+    queries: ["B2B trends Brazil 2025", "LatAm digital transformation"]
+  }
 };
 
 export const SYSTEM_PROMPT_TEMPLATES: Record<PromptKey, string> = {
-  search: `Ты — аналитик B2B-рынков. Составь дайджест для рынка {{MARKET}}.
-ЗАДАЧА: Сгенерируй 12 B2B-трендов (по 3 на каждую тему: Продажи, Финансы, Ритейл, IT).
-{{NEWS_CONTEXT}}
-{{CUSTOM_INSTRUCTIONS}}
-Ответь ТОЛЬКО JSON: { "items": [{ "headline": "", "topic": "", "summary": "", "business_impact": "" }] }`,
+  search: `Ты — B2B аналитик. Рынок: {{MARKET}}. Составь 8 актуальных трендов.
+Ответь ТОЛЬКО в JSON: { "items": [{ "headline": "", "topic": "", "summary": "", "business_impact": "" }] }`,
 
-  evaluate: `Ты — аудитор локализации для {{MARKET}}. 
-Проанализируй текст на соответствие тону: {{TONE}}.
-ТЕКСТ: """{{TEXT}}"""
-Ответь ТОЛЬКО JSON с вердиктом и вариантами переписывания (suggested_local на {{LANGUAGE}}).`,
+  evaluate: `Ты — эксперт по локализации для рынка {{MARKET}}. Оцени текст. 
+Верни JSON: { "verdict": "PASS|SUSPICIOUS|FOREIGN", "verdict_reason": "на русском", "rewrites": [{"block":"", "original":"", "suggested":"", "suggested_local":"", "reason":""}] }
+ТЕКСТ: {{TEXT}}`,
 
-  improve_icebreaker: `Ты — B2B копирайтер в {{MARKET}}. Перепиши это как холодное письмо (Icebreaker). Использовать {{LANGUAGE}}.`,
-  improve_thought_leader: `Ты — эксперт в {{MARKET}}. Сделай из этого экспертный пост. Использовать {{LANGUAGE}}.`,
-  improve_landing_page: `Ты — маркетолог в {{MARKET}}. Сделай текст для лендинга. Использовать {{LANGUAGE}}.`,
-  improve_follow_up: `Ты — менеджер в {{MARKET}}. Напиши мягкое напоминание (Follow-up). Использовать {{LANGUAGE}}.`,
-  improve_social: `Ты — SMM-стратег для рынка {{MARKET}}. 
-ЗАДАЧА: Преврати этот текст в виральный B2B пост для социальных сетей (LinkedIn/X). 
-ИСПОЛЬЗУЙ: Эмодзи (умеренно), хэштеги, вовлекающий вопрос в конце.
-ЯЗЫК: {{LANGUAGE}}. 
-{{CUSTOM_INSTRUCTIONS}}
-ТЕКСТ: """{{TEXT}}"""`,
-  improve_standard: `Ты — редактор в {{MARKET}}. Сделай текст нативным на {{LANGUAGE}}.`,
+  improve_icebreaker: `Перепиши как холодное письмо (Icebreaker) для {{MARKET}} на языке {{LANG}}.`,
+  improve_thought_leader: `Перепиши как экспертный пост (Thought Leader) для {{MARKET}} на языке {{LANG}}.`,
+  improve_landing_page: `Перепиши как продающий текст для лендинга для {{MARKET}} на языке {{LANG}}.`,
+  improve_follow_up: `Напиши мягкое напоминание (Follow-up) для {{MARKET}} на языке {{LANG}}.`,
+  improve_social: `Напиши вовлекающий пост для соцсетей для {{MARKET}} на языке {{LANG}}. Используй эмодзи.`,
+  improve_standard: `Сделай текст нативным для {{MARKET}} на языке {{LANG}}.`,
 };
 
-export function buildSearchPrompt(market: string, newsContext: string, today: string, ninetyDaysAgo: string, keyword?: string, userPrompt?: string): string {
-  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  return SYSTEM_PROMPT_TEMPLATES.search
-    .replace('{{MARKET}}', p.labelRu)
-    .replace('{{NEWS_CONTEXT}}', newsContext)
-    .replace('{{CUSTOM_INSTRUCTIONS}}', userPrompt || "");
-}
-
-export function buildEvaluatePrompt(text: string, market: string, trend?: string, userPrompt?: string): string {
-  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  return SYSTEM_PROMPT_TEMPLATES.evaluate
-    .replace('{{MARKET}}', p.labelRu)
-    .replace('{{TONE}}', p.tone)
-    .replace('{{LANGUAGE}}', p.language)
-    .replace('{{TEXT}}', text);
-}
-
-export function buildImprovePrompt(text: string, market: string, preset: string, trend?: any, userPrompt?: string): string {
-  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
-  const key = `improve_${preset}` as PromptKey;
+export function buildPrompt(key: PromptKey, market: MarketKey, text?: string): string {
+  const m = MARKET_PROFILES[market];
   const template = SYSTEM_PROMPT_TEMPLATES[key] || SYSTEM_PROMPT_TEMPLATES.improve_standard;
-  return template
-    .replace('{{MARKET}}', p.labelRu)
-    .replace('{{LANGUAGE}}', p.language)
-    .replace('{{TEXT}}', text)
-    .replace('{{CUSTOM_INSTRUCTIONS}}', userPrompt || "");
+  let p = template.replace(/{{MARKET}}/g, m.labelRu).replace(/{{LANG}}/g, m.lang);
+  if (text) p += `\n\nТЕКСТ ДЛЯ ОБРАБОТКИ:\n${text}`;
+  
+  // Для улучшения добавляем требование к JSON-ответу, если это не чистый текст
+  if (key.startsWith('improve')) {
+    p += `\nВерни JSON: { "improved_local": "текст на ${m.lang}", "tone_achieved": "описание тона на русском", "changes": [{"what": "", "why": ""}] }`;
+  }
+  return p;
 }
