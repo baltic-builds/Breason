@@ -1,16 +1,5 @@
 // ─── AI Providers ─────────────────────────────────────────────────────────────
-
-export type AIProvider =
-  | 'gemini'
-  | 'gemini-2.5-flash'
-  | 'groq'
-  | 'openrouter'
-  | 'openai'
-  | 'anthropic'
-  | 'tavily'
-  | 'local';
-
-// ─── AI Meta ──────────────────────────────────────────────────────────────────
+export type AIProvider = 'gemini' | 'gemini-2.5-flash' | 'groq' | 'openrouter' | 'openai' | 'anthropic' | 'local';
 
 export interface AIResponseMeta {
   provider: AIProvider;
@@ -21,123 +10,52 @@ export interface AIResponseMeta {
   costUsd?: number;
 }
 
-// ─── ReDuck ───────────────────────────────────────────────────────────────────
-
-export interface ReDuckProcessRequest {
-  text: string;
-  providerId: string;
-  modelId?: string;
-  promptVersion?: string;
-}
-
-export interface ReDuckProcessResult {
-  processedText: string;
-  meta: AIResponseMeta;
-}
-
-export interface ReDuckModel {
-  id: string;
-  label: string;
-  providerId: string;
-  description?: string;
-}
-
-export interface ReDuckProviderGroup {
-  id: string;
-  name: string;
-  models: ReDuckModel[];
-}
-
 // ─── Market ───────────────────────────────────────────────────────────────────
-
-export type MarketKey = string;
+export type MarketKey = "germany" | "poland" | "brazil" | "global";
 
 export const isMarketKey = (key: string): key is MarketKey => {
-  return ['br', 'mx', 'latam', 'global', 'brazil', 'poland', 'germany'].includes(key);
+  return ['brazil', 'poland', 'germany', 'global'].includes(key);
 };
 
-// ─── Logger ───────────────────────────────────────────────────────────────────
+// ─── Prompts (New Architecture) ───────────────────────────────────────────────
+export type PromptKey = 
+  | "search" 
+  | "evaluate" 
+  | "improve_icebreaker" 
+  | "improve_thought_leader" 
+  | "improve_landing_page" 
+  | "improve_follow_up" 
+  | "improve_standard";
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type CustomPrompts = Partial<Record<PromptKey, string>>;
 
-export interface LogEntry {
-  level: LogLevel;
-  message: string;
-  timestamp: string;
-  provider?: string;
-  promptVersion?: string;
-  latencyMs?: number;
-  tokensUsed?: number;
-  requestId?: string;
-  success?: boolean;
-  context?: Record<string, unknown>;
-  error?: string | { message: string; stack?: string; code?: string };
-  [key: string]: unknown;
-}
-
-// ─── Resonance ────────────────────────────────────────────────────────────────
-
-export type ResonanceTrend = {
-  title: string;
-  market?: string;
-  language?: string;
-  source?: string;
-  resonanceScore?: number;
-  marketTension?: string;
-  insight?: string;
-  description?: string;
-  metrics?: Record<string, number | string>;
-  [key: string]: unknown;
-};
-
-export interface ResonanceTrendsResponse extends AIResponseMeta {
-  trends: ResonanceTrend[];
-  market?: string;
-  generatedAt?: string;
-  [key: string]: unknown;
-}
-
-export interface ResonanceGenerateResponse extends AIResponseMeta {
+// ─── Resonance / Output Interfaces ────────────────────────────────────────────
+export interface NewsItem {
   headline: string;
-  body: string;
-  cta: string;
-  trend?: ResonanceTrend;
-  market?: string;
-  generatedAt?: string;
-  [key: string]: unknown;
+  topic: string;
+  category: string;
+  summary: string;
+  business_impact: string;
+  resonance_score?: number;
 }
 
-// ─── Request shapes ───────────────────────────────────────────────────────────
-
-export interface AnalyzeRequest {
-  text: string;
-  market: string;
+export interface ToneMap {
+  formal_casual: number;
+  bold_cautious: number;
+  technical_benefit: number;
+  abstract_concrete: number;
+  global_native: number;
 }
 
-export interface ResonanceGenerateRequest {
-  market: string;
-  trend: ResonanceTrend;
-}
-
-// ─── Analyze ──────────────────────────────────────────────────────────────────
-
-export interface AnalyzeResult extends AIResponseMeta {
-  score: number;
-  verdict: string;
-  strengths?: string[];
-  weaknesses?: string[];
-  suggestions?: string[];
-  risks?: string[];
-  marketTension?: string;
-  insight?: string;
-  market?: string;
-  language?: string;
-  raw?: string;
-  [key: string]: unknown;
+export interface Rewrite {
+  block: string;
+  original: string;
+  suggested: string;
+  suggested_local: string;
+  reason: string;
 }
 
 // ─── Feature Flags ────────────────────────────────────────────────────────────
-
 export interface FeatureFlags {
   resonanceEnabled: boolean;
   reDuckEnabled: boolean;
