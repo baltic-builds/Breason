@@ -1,183 +1,242 @@
-import type { MarketKey, ResonanceTrend } from "@breason/types";
+import type { MarketKey, CustomPrompts, PromptKey } from "@breason/types";
 
-// ── Version registry ──────────────────────────────────────────────────────────
-
-export type PromptId =
-  | "analyze@2"
-  | "resonance-trends@3"
-  | "reduck/brazil-warmth@1"
-  | "reduck/germany-trust@1"
-  | "reduck/poland-roi@1"
-  | "reduck/de-cliche@1";
-
-export interface PromptMeta {
-  id: PromptId;
-  description: string;
-  label?: string;
-}
-
-// ── Analyze (Шаг 2: Проверять) ────────────────────────────────────────────────
-
-export const ANALYZE_PROMPT_META: PromptMeta = {
-  id: "analyze@2",
-  description: "Deep cultural and commercial diagnostic of B2B copy",
+// ── Профили рынков ──
+export const MARKET_PROFILES: Record<string, {
+  label: string; labelRu: string; language: string;
+  searchQueries: string[];
+  tone: string; trust: string[]; redFlags: string[]; cta: string;
+}> = {
+  germany: {
+    label: "Germany (DACH)", labelRu: "Германия", language: "German",
+    searchQueries: ["B2B Software Trends Deutschland 2025", "Digitalisierung Mittelstand aktuell"],
+    tone: "Formal, precise, process-oriented, deeply skeptical of hype",
+    trust: ["GDPR compliance", "ISO certifications", "EU data residency", "SLA clarity"],
+    redFlags: ["unlock", "revolutionary", "game-changer", "all-in-one", "seamless", "next-gen"],
+    cta: "Soft: 'Demo anfragen', 'Unverbindlich beraten lassen'",
+  },
+  poland: {
+    label: "Poland", labelRu: "Польша", language: "Polish",
+    searchQueries: ["trendy B2B Polska 2025", "rynek SaaS Polska nowe technologie"],
+    tone: "Direct but fact-based, values concrete numbers, transparent pricing",
+    trust: ["specific ROI metrics", "transparent pricing", "technical specifications", "implementation timeline"],
+    redFlags: ["hype without data", "vague promises", "hidden pricing", "abstract benefits"],
+    cta: "Direct: 'Umów demo (15 min)', 'Zobacz jak to działa'",
+  },
+  brazil: {
+    label: "Brazil", labelRu: "Бразилия", language: "Brazilian Portuguese",
+    searchQueries: ["tendências B2B Brasil 2025", "mercado SaaS Brasil novidades"],
+    tone: "Warm, human, relationship-first, low-friction",
+    trust: ["Portuguese language support", "local case studies", "WhatsApp contact", "LGPD compliance"],
+    redFlags: ["cold corporate tone", "aggressive sales push", "English-only support"],
+    cta: "Human: 'Agende uma demonstração', 'Teste grátis — sem compromisso'",
+  },
 };
 
-export function analyzePrompt(market: MarketKey, text: string): string {
-  const marketNames: Record<string, string> = {
-    brazil: "Бразилии",
-    poland: "Польши",
-    germany: "Германии (DACH)"
-  };
-  
-  const targetMarket = marketNames[market] || market;
+export const TARGET_TOPICS = ["B2B Продажи и CRM", "Финансы и Консалтинг", "Ритейл и E-commerce", "IT и Разработка"];
 
-  return `You are Breason, an elite B2B localisation strategist. 
-Your task is to diagnose if the provided marketing copy sounds native and trustworthy for the ${targetMarket} market.
-Translation ≠ Localization. You evaluate cultural fit, trust markers, and tone.
+// ── Базовые шаблоны ──
+export const SYSTEM_PROMPT_TEMPLATES: Record<PromptKey, string> = {
+  search: `Ты старший аналитик B2B-рынков. Составь деловой дайджест для рынка {{MARKET}}.
+СЕГОДНЯ: {{TODAY}}. Период: с {{NINETY_DAYS_AGO}}.
 
-TEXT TO EVALUATE:
-"""
-${text}
-"""
+{{CUSTOM_INSTRUCTIONS}}
 
-CRITICAL RULES:
-1. Be brutally honest. If it sounds like a translated US-SaaS text ("unlock efficiency", "all-in-one"), call it out.
-2. Output STRICTLY in JSON format.
-3. ALL output text (except JSON keys and the Verdict) MUST be in Russian.
+КОНТЕКСТ ИЗ СМИ:
+---
+{{NEWS_CONTEXT}}
+---
 
-JSON STRUCTURE:
+ЗАДАЧА: Сгенерируй ровно 12 актуальных B2B-трендов. СТРОГО по 3 тренда на каждую из 4 тем: B2B Продажи и CRM, Финансы и Консалтинг, Ритейл и E-commerce, IT и Разработка.
+{{KEYWORD_FOCUS}}
+
+КРИТИЧЕСКИЕ ПРАВИЛА:
+1. Весь текст ТОЛЬКО на русском языке.
+2. Только plain text. Никакого Markdown.
+3. Не упоминай COVID.
+
+Ответь ТОЛЬКО валидным JSON:
+{
+  "market": "{{MARKET}}",
+  "generated_at": "{{TODAY}}",
+  "items": [
+    {
+      "headline": "Краткий заголовок",
+      "topic": "Строго одна из тем: B2B Продажи и CRM, Финансы и Консалтинг, Ритейл и E-commerce, IT и Разработка",
+      "category": "Подкатегория",
+      "summary": "2 предложения сути",
+      "business_impact": "Следствие для B2B продаж"
+    }
+  ]
+}`,
+
+  evaluate: `Ты старший аудитор B2B-локализации. Проанализируй текст для рынка {{MARKET}}.
+ПРОФИЛЬ: Тон: {{TONE}} | Доверие: {{TRUST}} | Красные флаги: {{RED_FLAGS}}
+{{TREND_CONTEXT}}
+{{CUSTOM_INSTRUCTIONS}}
+
+ТЕКСТ:
+"""{{TEXT}}"""
+
+Ответь ТОЛЬКО JSON:
 {
   "verdict": "PASS" | "SUSPICIOUS" | "FOREIGN",
-  "verdict_reason": "Краткое объяснение диагноза (1-2 предложения).",
-  "genericness_score": 0-100, // 100 = full of US SaaS cliches, 0 = highly specific and local
-  "generic_phrases_found": ["phrase 1", "phrase 2"],
+  "verdict_reason": "Одно предложение (RU)",
+  "genericness_score": 0,
+  "generic_phrases": ["фраза 1", "фраза 2"],
   "tone_map": {
-    "formal_vs_casual": "Оценка по шкале и комментарий (например: 'Слишком bold и abstract для Германии')",
-    "bold_vs_cautious": "Оценка и комментарий",
-    "global_vs_native": "Оценка и комментарий"
+    "formal_casual": 0,
+    "bold_cautious": 0,
+    "technical_benefit": 0,
+    "abstract_concrete": 0,
+    "global_native": 0
   },
-  "missing_trust_signals": ["Что ожидают увидеть местные покупатели, но этого нет (например: GDPR, local support, local case studies)"],
-  "competitor_comparison": "Как локальные конкуренты говорят об этом (конкретный пример/подход).",
-  "local_trends_context": "Текущий контекст рынка, влияющий на восприятие этого текста.",
-  "rewrite_suggestions": [
+  "missing_trust_signals": ["сигнал 1"],
+  "rewrites": [
     {
-      "original_focus": "Что сейчас в фокусе (например: Headline)",
-      "suggestion": "Ваш вариант на местном языке (${market})",
-      "reason": "Почему этот вариант сработает лучше"
+      "block": "Заголовок/CTA (RU)",
+      "original": "фрагмент исходника",
+      "suggested": "EN rewrite",
+      "suggested_local": "Rewrite in {{LANGUAGE}} (PLAIN TEXT)",
+      "reason": "Почему лучше (RU)"
     }
   ]
-}`;
-}
+}`,
 
-// ── Resonance Trends (Шаг 1: Искать) ──────────────────────────────────────────
+  improve_icebreaker: `Ты — Senior B2B Copywriter на рынке: {{MARKET}}.
+Перепиши текст холодного сообщения.
+ХУК: Используй тренд "{{TREND_NAME}}". Боль рынка: "{{TREND_TENSION}}".
+СТРУКТУРА: 1. Тема. 2. Хук. 3. Ценность. 4. Пруф. 5. Мягкий CTA.
+{{CUSTOM_INSTRUCTIONS}}
 
-export const RESONANCE_TRENDS_PROMPT_META: PromptMeta = {
-  id: "resonance-trends@3",
-  description: "Detailed B2B marketing briefs based on 90-day local traction",
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+СИСТЕМНОЕ ОГРАНИЧЕНИЕ: Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_thought_leader: `Ты — топовый B2B Influencer на рынке: {{MARKET}}.
+Трансформируй текст в пост.
+ХУК: Вплети тренд "{{TREND_NAME}}" (Боль: "{{TREND_TENSION}}").
+СТРУКТУРА: Провокационный хук, раскрытие проблемы, решение, открытый вопрос к аудитории.
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_landing_page: `Ты — продуктовый маркетолог на рынке: {{MARKET}}.
+Перепиши описание продукта под менталитет рынка, опираясь на тренд: "{{TREND_NAME}}".
+СТРУКТУРА:
+Главное обещание.
+Как мы решаем боль.
+Три прагматичных преимущества (буллиты).
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_follow_up: `Ты — Account Executive на рынке: {{MARKET}}.
+Напиши фоллоу-ап.
+ХУК: Упомяни тренд "{{TREND_NAME}}" как причину для контакта и покажи решение боли "{{TREND_TENSION}}".
+СТРУКТУРА: 1 абзац. Максимум 4-5 предложений.
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
+
+  improve_standard: `Ты эксперт B2B-копирайтер для рынка {{MARKET}}. Перепиши текст нативно. Учитывай тренд: {{TREND_NAME}}.
+ПРОФИЛЬ: Тон: {{TONE}} | Доверие: {{TRUST}} | Избегать: {{RED_FLAGS}}
+{{CUSTOM_INSTRUCTIONS}}
+
+ИСХОДНЫЙ ТЕКСТ:
+"""{{TEXT}}"""
+
+Вернуть СТРОГО JSON. Никакого Markdown.
+{
+  "improved_text": "Полная версия на EN",
+  "improved_local": "Финальная версия на {{LANGUAGE}} (СТРОГО БЕЗ MARKDOWN)",
+  "changes": [{ "what": "Что изменено (RU)", "why": "Почему работает лучше (RU)" }],
+  "tone_achieved": "Описание тона (RU)"
+}`,
 };
 
-const TRENDS_BASE = (marketKey: string, marketName: string, localContext: string) => `\
-You are a B2B Marketing Strategist who has been working in ${marketName} for 12 years. It is 2026.
-You talk to CMOs and sales directors at mid-market companies every week.
+// ── Построители промптов ──
 
-Your task: Identify 3 B2B marketing narratives generating real traction in ${marketName} RIGHT NOW (last 90 days).
-OUTPUT MUST BE A COMPREHENSIVE BRIEF FOR A MARKETER.
+export function buildSearchPrompt(market: string, newsContext: string, today: string, ninetyDaysAgo: string, keyword?: string, userPrompt?: string): string {
+  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
+  const keywordClause = keyword?.trim() ? `ФОКУС: Приоритизируй тренды, связанные с "${keyword.trim()}".` : "";
+  const customClause  = userPrompt?.trim() ? `\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${userPrompt.trim()}\n` : "";
 
-CRITICAL RULES:
-1. NO generic categories. We need specific stories.
-2. market_tension is a conflict between two real forces.
-3. ALL TEXT IN YOUR RESPONSE MUST BE IN RUSSIAN.
-4. STRICTLY VALID JSON. NO MARKDOWN.
-
-LOCAL CONTEXT FOR ${marketName}: ${localContext}
-
-JSON STRUCTURE:
-{
-  "market": "${marketName}",
-  "year": 2026,
-  "analyst_note": "Одно предложение о доминирующем настроении B2B рынка. Конкретно.",
-  "trends": [
-    {
-      "trend_name": "Название (до 5 слов)",
-      "narrative_hook": "Одно предложение. Конфликт или неожиданность.",
-      "market_tension": "Сила А vs Сила Б.",
-      "why_now": "Что произошло за последние 90 дней.",
-      "resonance_score": 0, // 60 to 100
-      "brief_for_marketer": "Подробный бриф: как использовать этот тренд в кампаниях, какие каналы выбрать, какие триггеры доверия использовать."
-    }
-  ]
-}`;
-
-export function resonanceTrendsPrompt(market: MarketKey): string {
-  switch (market) {
-    case "brazil":
-      return TRENDS_BASE("brazil", "Бразилии", "Тёплая, доверительная B2B-коммуникация. WhatsApp важнее email. Ожидание 'sem compromisso' (без обязательств).");
-    case "poland":
-      return TRENDS_BASE("poland", "Польше", "Прагматичность. Ожидание конкретных цифр и ROI. Скепсис к абстрактным 'all-in-one' обещаниям.");
-    case "germany":
-      return TRENDS_BASE("germany", "Германии", "Фокус на Datenschutz, GDPR, ISO. Процесс, надежность и безопасность важнее хайпа. Скепсис к агрессивному 'US SaaS voice'.");
-    default:
-      return TRENDS_BASE(market, market, "Локализация и доверие.");
-  }
+  return SYSTEM_PROMPT_TEMPLATES.search
+    .replace('{{MARKET}}', p.label)
+    .replace(/\{\{TODAY\}\}/g, today)
+    .replace('{{NINETY_DAYS_AGO}}', ninetyDaysAgo)
+    .replace('{{NEWS_CONTEXT}}', newsContext)
+    .replace('{{KEYWORD_FOCUS}}', keywordClause)
+    .replace('{{CUSTOM_INSTRUCTIONS}}', customClause);
 }
 
-// ── ReDuck prompts (Шаг 3: Улучшать) ──────────────────────────────────────────
+export function buildEvaluatePrompt(text: string, market: string, trendContext?: string, userPrompt?: string): string {
+  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
+  const customClause = userPrompt?.trim() ? `\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ: ${userPrompt.trim()}\n` : "";
+  const trendStr = trendContext ? `\nТРЕНД РЫНКА (учитывай при аудите): ${trendContext}` : "";
 
-export interface ReDuckPromptDef {
-  meta: PromptMeta;
-  label: string;
-  systemPrompt: string;
+  return SYSTEM_PROMPT_TEMPLATES.evaluate
+    .replace('{{MARKET}}', p.label)
+    .replace('{{TONE}}', p.tone)
+    .replace('{{TRUST}}', p.trust.join(", "))
+    .replace('{{RED_FLAGS}}', p.redFlags.join(", "))
+    .replace('{{TREND_CONTEXT}}', trendStr)
+    .replace('{{CUSTOM_INSTRUCTIONS}}', customClause)
+    .replace('{{TEXT}}', text)
+    .replace('{{LANGUAGE}}', p.language);
 }
 
-export const REDUCK_PROMPTS: ReDuckPromptDef[] = [
-  {
-    meta: { id: "reduck/brazil-warmth@1", label: "🇧🇷 Добавить теплоты (Brazil)", description: "Снизить барьеры, добавить человечности" },
-    label: "🇧🇷 Добавить теплоты (Brazil)",
-    systemPrompt: `You are an expert B2B copywriter in Brazil. Your goal is to rewrite the provided translated text to sound native to Brazil.
-    
-RULES:
-1. Make the tone warm and conversational, but professional (trusted local colleague).
-2. Remove aggressive US-style sales pushes ("Buy NOW", "Unlock").
-3. Use terms like "sem compromisso" or focus on easy contact (WhatsApp).
-4. Use active voice and "você".
-5. Provide the rewritten text in Brazilian Portuguese, followed by a short explanation in Russian of what you changed and why.`,
-  },
-  {
-    meta: { id: "reduck/germany-trust@1", label: "🇩🇪 Усилить доверие (Germany)", description: "Добавить формальности, комплаенса и строгости" },
-    label: "🇩🇪 Усилить доверие (Germany)",
-    systemPrompt: `You are an expert B2B copywriter in Germany (DACH region). Your goal is to rewrite the provided text to pass the strict German "trust filter".
-    
-RULES:
-1. Make the tone formal, structured, and benefit-led (not hype-led).
-2. Remove vague claims ("All-in-one", "Next-gen"). Replace them with concrete process descriptions.
-3. Soften aggressive CTAs (use "Unverbindlich beraten lassen" instead of "Start now").
-4. If applicable, implicitly hint at compliance, data security, or local reliability.
-5. Provide the rewritten text in German, followed by a short explanation in Russian of what you changed and why.`,
-  },
-  {
-    meta: { id: "reduck/poland-roi@1", label: "🇵🇱 Прямота и ROI (Poland)", description: "Убрать воду, добавить конкретику" },
-    label: "🇵🇱 Прямота и ROI (Poland)",
-    systemPrompt: `You are an expert B2B copywriter in Poland. Your goal is to rewrite the provided text to appeal to a pragmatic Polish buyer.
-    
-RULES:
-1. Remove all marketing fluff and corporate cliches.
-2. Focus strictly on "How it works" and "What is the ROI".
-3. Keep the tone direct and transparent. Polish buyers are sceptical of big empty promises.
-4. Provide the rewritten text in Polish, followed by a short explanation in Russian of what you changed and why.`,
-  },
-  {
-    meta: { id: "reduck/de-cliche@1", label: "🧹 Убить клише (Global)", description: "Очистить текст от US SaaS Buzzwords" },
-    label: "🧹 Убить клише (Global)",
-    systemPrompt: `You are a strict B2B editor. The user will provide a text full of standard US SaaS buzzwords (seamless, unlock efficiency, all-in-one, empower, next-gen).
-    
-Your task:
-1. Rewrite the text to say exactly WHAT the product does in simple, human language.
-2. Output the result in the original language of the input.
-3. List the "Buzzwords killed" in a short bulleted list in Russian.`,
-  }
-];
+export function buildImprovePrompt(text: string, market: string, preset: string, trendContext?: any, userPrompt?: string): string {
+  const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
+  const trendName    = trendContext?.headline     || "Оптимизация корпоративных систем";
+  const trendTension = trendContext?.business_impact || "Бизнес ищет снижение издержек";
+  const customClause = userPrompt?.trim() ? `\nДОП. ИНСТРУКЦИИ: ${userPrompt.trim()}\n` : "";
 
-export const REDUCK_PROMPT_MAP = Object.fromEntries(
-  REDUCK_PROMPTS.map((p) => [p.meta.id.split("@")[0].replace("reduck/", ""), p])
-) as Record<string, ReDuckPromptDef>;
+  const promptKey = `improve_${preset}` as PromptKey;
+  const template = SYSTEM_PROMPT_TEMPLATES[promptKey] || SYSTEM_PROMPT_TEMPLATES.improve_standard;
+
+  return template
+    .replace(/\{\{MARKET\}\}/g, p.label)
+    .replace(/\{\{TREND_NAME\}\}/g, trendName)
+    .replace(/\{\{TREND_TENSION\}\}/g, trendTension)
+    .replace('{{TONE}}', p.tone)
+    .replace('{{TRUST}}', p.trust.join(", "))
+    .replace('{{RED_FLAGS}}', p.redFlags.join(", "))
+    .replace('{{CUSTOM_INSTRUCTIONS}}', customClause)
+    .replace('{{TEXT}}', text)
+    .replace(/\{\{LANGUAGE\}\}/g, p.language);
+}
