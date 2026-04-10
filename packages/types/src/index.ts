@@ -6,7 +6,7 @@ export interface AIResponseMeta {
   requestedAt: string;
 }
 
-export type MarketKey = "germany" | "poland" | "brazil" | "global";
+export type MarketKey = "germany" | "poland" | "brazil";
 
 export type PromptKey = 
   | "search" 
@@ -17,8 +17,6 @@ export type PromptKey =
   | "improve_follow_up" 
   | "improve_social"
   | "improve_standard";
-
-export type CustomPrompts = Partial<Record<PromptKey, string>>;
 
 export interface NewsItem {
   headline: string;
@@ -36,8 +34,15 @@ export interface Rewrite {
   reason: string;
 }
 
-export interface FeatureFlags {
-  resonanceEnabled: boolean;
-  reDuckEnabled: boolean;
-  analyzeEnabled: boolean;
+export interface EvaluateResult {
+  verdict: "PASS" | "SUSPICIOUS" | "FOREIGN";
+  verdict_reason: string;
+  rewrites: Rewrite[];
+}
+
+export interface ImproveResult {
+  improved_text: string;
+  improved_local: string;
+  tone_achieved: string;
+  changes: { what: string; why: string }[];
 }
