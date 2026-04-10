@@ -1,118 +1,148 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { MARKET_PROFILES } from "@breason/prompts";
+import { MarketKey, NewsItem, EvaluateResult, ImproveResult } from "@breason/types";
 
-export default function BreasonApp() {
+export default function BreasonPage() {
   const [step, setStep] = useState<"search" | "evaluate" | "improve">("search");
-  const [market, setMarket] = useState("germany");
+  const [market, setMarket] = useState<MarketKey>("germany");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any>(null);
   const [text, setText] = useState("");
+  const [preset, setPreset] = useState("standard");
+  
+  // Состояния для результатов
+  const [trends, setTrends] = useState<NewsItem[]>([]);
+  const [evalRes, setEvalRes] = useState<EvaluateResult | null>(null);
+  const [impRes, setImpRes] = useState<ImproveResult | null>(null);
 
   const PRESETS = [
+    { id: "standard", label: "Стандарт" },
     { id: "icebreaker", label: "Ледокол" },
     { id: "thought_leader", label: "Лидер мнений" },
     { id: "landing_page", label: "Лендинг" },
     { id: "follow_up", label: "Напоминание" },
-    { id: "social", label: "Социальные сети" },
-    { id: "standard", label: "Стандартная правка" },
+    { id: "social", label: "Соцсети" },
   ];
 
+  async function handleAction(actionOverride?: string) {
+    setLoading(true);
+    setEvalRes(null);
+    setImpRes(null);
+    
+    try {
+      const action = actionOverride || (step === 'improve' ? `improve_${preset}` : step);
+      const res = await fetch("/api/resonance-trends", {
+        method: "POST",
+        body: JSON.stringify({ action, market, text }),
+      });
+      const data = await res.json();
+      
+      if (step === 'search') setTrends(data.items || []);
+      if (step === 'evaluate') setEvalRes(data);
+      if (step === 'improve') setImpRes(data);
+    } catch (e) {
+      alert("Ошибка запроса");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="app-container">
+    <div className="container">
       <style>{`
-        :root {
-          --accent: #F97316;
-          --accent-light: #FFF7ED;
-          --bg: #FAFAFA;
-          --text: #171717;
-          --text-secondary: #737373;
-          --border: #E5E5E5;
-          --white: #FFFFFF;
-        }
-
-        body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; margin: 0; }
+        :root { --orange: #F97316; --orange-light: #FFF7ED; --border: #E5E7EB; --text: #111827; }
+        body { background: #FAFAFA; font-family: 'DM Sans', sans-serif; color: var(--text); }
+        .container { display: flex; min-height: 100vh; }
         
-        .app-container { display: flex; min-height: 100vh; }
+        .sidebar { width: 260px; background: white; border-right: 1px solid var(--border); padding: 40px 24px; }
+        .logo { font-size: 22px; font-weight: 800; color: var(--orange); margin-bottom: 40px; letter-spacing: -0.5px; }
+        .nav-btn { width: 100%; text-align: left; padding: 12px 16px; border-radius: 10px; margin-bottom: 8px; border: none; background: none; cursor: pointer; font-weight: 500; color: #6B7280; transition: 0.2s; }
+        .nav-btn.active { background: var(--orange-light); color: var(--orange); }
+
+        .main { flex: 1; padding: 60px 80px; max-width: 900px; }
         
-        /* Sidebar */
-        .sidebar { width: 280px; border-right: 1px solid var(--border); background: var(--white); padding: 32px; display: flex; flex-direction: column; }
-        .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 24px; color: var(--accent); margin-bottom: 48px; }
-        .nav-item { padding: 12px 16px; border-radius: 12px; cursor: pointer; margin-bottom: 8px; font-weight: 500; transition: all 0.2s; color: var(--text-secondary); }
-        .nav-item.active { background: var(--accent-light); color: var(--accent); }
+        .market-selector { display: flex; gap: 12px; margin-bottom: 40px; }
+        .market-btn { flex: 1; background: white; border: 1px solid var(--border); padding: 16px; border-radius: 16px; cursor: pointer; transition: 0.2s; text-align: center; }
+        .market-btn.active { border-color: var(--orange); box-shadow: 0 0 0 2px var(--orange-light); }
+        .flag { font-size: 24px; display: block; margin-bottom: 4px; }
+        .m-name { font-size: 14px; font-weight: 600; }
 
-        /* Main */
-        .main { flex: 1; padding: 48px 64px; max-width: 1000px; margin: 0 auto; }
-        
-        .market-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 40px; }
-        .market-card { 
-          padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--white); cursor: pointer; text-align: center; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-        }
-        .market-card.active { border-color: var(--accent); background: var(--accent-light); transform: translateY(-2px); box-shadow: 0 12px 24px -10px rgba(249, 115, 22, 0.15); }
-        .market-flag { font-size: 32px; display: block; margin-bottom: 12px; }
-        .market-name { font-weight: 700; font-size: 15px; }
+        .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+        .p-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: white; font-size: 13px; cursor: pointer; transition: 0.2s; }
+        .p-btn.active { background: var(--orange); color: white; border-color: var(--orange); }
 
-        .preset-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-        .preset-btn { 
-          padding: 8px 16px; border-radius: 100px; border: 1px solid var(--border); background: var(--white); font-size: 13px; cursor: pointer; transition: 0.2s;
-        }
-        .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .input-box { width: 100%; min-height: 160px; padding: 20px; border-radius: 16px; border: 1px solid var(--border); font-size: 16px; outline: none; transition: 0.2s; resize: none; margin-bottom: 24px; }
+        .input-box:focus { border-color: var(--orange); }
 
-        .input-area { width: 100%; border: 1px solid var(--border); border-radius: 16px; padding: 24px; font-size: 16px; line-height: 1.6; min-height: 200px; resize: none; margin-bottom: 24px; outline: none; transition: 0.2s; }
-        .input-area:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-light); }
+        .go-btn { background: var(--orange); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-weight: 700; font-size: 16px; cursor: pointer; }
+        .go-btn:disabled { opacity: 0.5; }
 
-        .btn-main { background: var(--accent); color: white; border: none; padding: 16px 32px; border-radius: 12px; font-weight: 700; cursor: pointer; width: 100%; font-size: 16px; transition: 0.2s; }
-        .btn-main:hover { filter: brightness(1.1); }
-        .btn-main:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .results-box { margin-top: 40px; animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .result-card { background: white; border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-top: 32px; animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
       <aside className="sidebar">
         <div className="logo">Breason</div>
-        <div className={`nav-item ${step === 'search' ? 'active' : ''}`} onClick={() => setStep('search')}>🔍 Поиск трендов</div>
-        <div className={`nav-item ${step === 'evaluate' ? 'active' : ''}`} onClick={() => setStep('evaluate')}>⚖️ Аудит контента</div>
-        <div className={`nav-item ${step === 'improve' ? 'active' : ''}`} onClick={() => setStep('improve')}>✨ Улучшение текста</div>
+        <button className={`nav-btn ${step === 'search' ? 'active' : ''}`} onClick={() => setStep('search')}>🔍 Тренды рынка</button>
+        <button className={`nav-btn ${step === 'evaluate' ? 'active' : ''}`} onClick={() => setStep('evaluate')}>⚖️ Культурный аудит</button>
+        <button className={`nav-btn ${step === 'improve' ? 'active' : ''}`} onClick={() => setStep('improve')}>✨ Улучшение текста</button>
       </aside>
 
       <main className="main">
-        <div className="market-grid">
-          {Object.entries(MARKET_PROFILES).map(([key, p]) => (
-            <div 
-              key={key} 
-              className={`market-card ${market === key ? 'active' : ''}`}
-              onClick={() => setMarket(key)}
-            >
-              <span className="market-flag">{p.flag}</span>
-              <span className="market-name">{p.labelRu}</span>
-            </div>
+        <div className="market-selector">
+          {(Object.keys(MARKET_PROFILES) as MarketKey[]).map(k => (
+            <button key={k} className={`market-btn ${market === k ? 'active' : ''}`} onClick={() => setMarket(k)}>
+              <span className="flag">{MARKET_PROFILES[k].flag}</span>
+              <span className="m-name">{MARKET_PROFILES[k].labelRu}</span>
+            </button>
           ))}
         </div>
 
         {step === 'improve' && (
-          <div className="preset-grid">
+          <div className="presets">
             {PRESETS.map(p => (
-              <button key={p.id} className="preset-btn">{p.label}</button>
+              <button key={p.id} className={`p-btn ${preset === p.id ? 'active' : ''}`} onClick={() => setPreset(p.id)}>{p.label}</button>
             ))}
           </div>
         )}
 
         <textarea 
-          className="input-area" 
-          placeholder={step === 'search' ? 'Ключевое слово для поиска (опционально)...' : 'Вставьте ваш текст здесь...'}
+          className="input-box" 
+          placeholder={step === 'search' ? "Введите тему или оставьте пустым..." : "Вставьте текст для анализа или улучшения..."}
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
 
-        <button className="btn-main" disabled={loading}>
-          {loading ? 'Обработка...' : step === 'search' ? 'Найти тренды' : 'Запустить магию'}
+        <button className="go-btn" onClick={() => handleAction()} disabled={loading}>
+          {loading ? "Минутку..." : "Запустить процесс"}
         </button>
 
-        {results && <div className="results-box">
-          {/* Здесь рендеринг результатов в зависимости от шага */}
-        </div>}
+        {/* Вывод результатов */}
+        {step === 'search' && trends.length > 0 && (
+          <div className="result-card">
+            {trends.map((t, i) => (
+              <div key={i} style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 700, color: var(--orange) }}>{t.headline}</div>
+                <div style={{ fontSize: 14, color: "#666" }}>{t.summary}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {impRes && (
+          <div className="result-card" style={{ borderLeft: '4px solid var(--orange)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: var(--orange), marginBottom: 12 }}>✓ {impRes.tone_achieved}</div>
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{impRes.improved_local}</div>
+          </div>
+        )}
+
+        {evalRes && (
+          <div className="result-card">
+            <div style={{ fontWeight: 700 }}>Вердикт: {evalRes.verdict}</div>
+            <div style={{ color: "#666", marginTop: 8 }}>{evalRes.verdict_reason}</div>
+          </div>
+        )}
       </main>
     </div>
   );
