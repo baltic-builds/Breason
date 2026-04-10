@@ -8,6 +8,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 export async function POST(req: Request) {
   try {
     const { action, market, text } = await req.json();
+    
+    if (!market) return NextResponse.json({ error: "Market is required" }, { status: 400 });
+
     const prompt = buildPrompt(action as PromptKey, market as MarketKey, text);
     
     const model = genAI.getGenerativeModel({ 
@@ -18,8 +21,9 @@ export async function POST(req: Request) {
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
     
-    // Парсим JSON и возвращаем
-    const data = JSON.parse(responseText.replace(/```json|```/g, "").trim());
+    const cleanJson = responseText.replace(/```json|```/g, "").trim();
+    const data = JSON.parse(cleanJson);
+    
     return NextResponse.json(data);
 
   } catch (error: any) {
