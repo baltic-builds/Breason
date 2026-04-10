@@ -1,11 +1,5 @@
 export type AIProvider = 'gemini' | 'groq' | 'openai' | 'anthropic' | 'local';
 
-export interface AIResponseMeta {
-  provider: AIProvider;
-  latencyMs: number;
-  requestedAt: string;
-}
-
 export type MarketKey = "germany" | "poland" | "brazil";
 
 export type PromptKey = 
@@ -26,22 +20,13 @@ export interface NewsItem {
   business_impact: string;
 }
 
-export interface Rewrite {
-  block: string;
-  original: string;
-  suggested: string;
-  suggested_local: string;
-  reason: string;
-}
-
 export interface EvaluateResult {
   verdict: "PASS" | "SUSPICIOUS" | "FOREIGN";
   verdict_reason: string;
-  rewrites: Rewrite[];
+  rewrites: any[];
 }
 
 export interface ImproveResult {
-  improved_text: string;
   improved_local: string;
   tone_achieved: string;
   changes: { what: string; why: string }[];
