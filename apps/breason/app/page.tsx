@@ -19,22 +19,21 @@ interface Rewrite        { block: string; original: string; suggested: string; s
 interface EvaluateResult { verdict: VerdictType; verdict_reason: string; genericness_score: number; generic_phrases: string[]; tone_map: ToneMap; missing_trust_signals: string[]; rewrites: Rewrite[]; }
 interface ImproveResult  { improved_text: string; improved_local: string; changes: { what: string; why: string }[]; tone_achieved: string; }
 
-// Prompt store: ключи соответствуют ключам SYSTEM_PROMPT_TEMPLATES в route.ts
-type PromptKey = "search" | "evaluate" | "improve_icebreaker" | "improve_thought_leader" | "improve_landing_page" | "improve_follow_up" | "improve_standard";
+type PromptKey = "search" | "evaluate" | "improve_icebreaker" | "improve_thought_leader" | "improve_landing_page" | "improve_follow_up" | "improve_social" | "improve_standard";
 type PromptStore = Partial<Record<PromptKey, string>>;
 
 // ── Константы ─────────────────────────────────────────────────────────────────
 
-const MARKETS: Record<MarketKey, { labelRu: string; flag: string; desc: string }> = {
-  germany: { labelRu: "Германия", flag: "🇩🇪", desc: "Формальный · Точный · Процессный" },
-  poland:  { labelRu: "Польша",   flag: "🇵🇱", desc: "Прямой · Фактический · Прозрачный" },
-  brazil:  { labelRu: "Бразилия", flag: "🇧🇷", desc: "Тёплый · Человечный · Доверительный" },
+const MARKETS: Record<MarketKey, { labelRu: string; flag: string }> = {
+  germany: { labelRu: "Германия", flag: "🇩🇪" },
+  poland:  { labelRu: "Польша",   flag: "🇵🇱" },
+  brazil:  { labelRu: "Бразилия", flag: "🇧🇷" },
 };
 
 const STEPS: Record<StepKey, { num: string; label: string }> = {
-  search:   { num: "01", label: "Поиск трендов" },
+  search:   { num: "01", label: "Поиск трендов"  },
   evaluate: { num: "02", label: "Оценка контента" },
-  improve:  { num: "03", label: "Улучшение" },
+  improve:  { num: "03", label: "Улучшение"       },
 };
 
 const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: string; icon: string; label: string }> = {
@@ -43,27 +42,29 @@ const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: stri
   FOREIGN:    { color: "#BE123C", bg: "rgba(225,29,72,0.08)",   border: "rgba(225,29,72,0.3)",   icon: "✕", label: "Чужеродный контент" },
 };
 
+// Все пресеты — полностью на русском
 const PRESETS = [
-  { id: "icebreaker",     icon: "🧊", label: "Icebreaker",       desc: "Холодное письмо / LinkedIn" },
-  { id: "thought_leader", icon: "💡", label: "Thought Leader",   desc: "Вовлекающий пост"           },
-  { id: "landing_page",   icon: "📄", label: "Landing Page",     desc: "Блок для сайта"             },
-  { id: "follow_up",      icon: "👋", label: "Gentle Nudge",     desc: "Фоллоу-ап после встречи"   },
+  { id: "icebreaker",     icon: "🧊", label: "Холодное письмо",  desc: "LinkedIn / первый контакт"  },
+  { id: "thought_leader", icon: "💡", label: "Лидер мнений",     desc: "Экспертный материал"        },
+  { id: "landing_page",   icon: "📄", label: "Лендинг",          desc: "Блок для сайта"             },
+  { id: "follow_up",      icon: "👋", label: "Напоминание",       desc: "Фоллоу-ап после встречи"   },
+  { id: "social",         icon: "📣", label: "Социальные сети",   desc: "Пост для LinkedIn / X"     },
   { id: "standard",       icon: "🪄", label: "Стандартная правка", desc: "Улучшение по профилю"    },
 ];
 
-// Метаданные для вкладок редактора промптов
 const PROMPT_TABS: { key: PromptKey; label: string; icon: string; hint: string }[] = [
-  { key: "search",                 icon: "🔍", label: "Поиск трендов",   hint: "Управляет поиском и анализом B2B-трендов. Плейсхолдеры: {{MARKET}}, {{TODAY}}, {{NEWS_CONTEXT}}, {{KEYWORD_FOCUS}}" },
-  { key: "evaluate",               icon: "◈",  label: "Оценка контента", hint: "Управляет культурным аудитом текста. Плейсхолдеры: {{MARKET}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TEXT}}, {{TREND_CONTEXT}}" },
-  { key: "improve_icebreaker",     icon: "🧊", label: "Icebreaker",      hint: "Холодное письмо / LinkedIn-сообщение. Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_thought_leader", icon: "💡", label: "Thought Leader",  hint: "Вовлекающий пост в соцсети. Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_landing_page",   icon: "📄", label: "Landing Page",    hint: "Описание продукта под рынок. Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
-  { key: "improve_follow_up",      icon: "👋", label: "Gentle Nudge",    hint: "Фоллоу-ап после встречи. Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_standard",       icon: "🪄", label: "Стандартная правка", hint: "Базовое улучшение по профилю рынка. Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TREND_NAME}}, {{TEXT}}" },
+  { key: "search",                 icon: "🔍", label: "Поиск трендов",   hint: "Плейсхолдеры: {{MARKET}}, {{TODAY}}, {{NEWS_CONTEXT}}, {{KEYWORD_FOCUS}}" },
+  { key: "evaluate",               icon: "◈",  label: "Оценка контента", hint: "Плейсхолдеры: {{MARKET}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TEXT}}, {{TREND_CONTEXT}}" },
+  { key: "improve_icebreaker",     icon: "🧊", label: "Холодное письмо", hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
+  { key: "improve_thought_leader", icon: "💡", label: "Лидер мнений",    hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
+  { key: "improve_landing_page",   icon: "📄", label: "Лендинг",         hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
+  { key: "improve_follow_up",      icon: "👋", label: "Напоминание",      hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
+  { key: "improve_social",         icon: "📣", label: "Социальные сети", hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
+  { key: "improve_standard",       icon: "🪄", label: "Стандартная правка", hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TREND_NAME}}, {{TEXT}}" },
 ];
 
 const LOADING_MSGS: Record<StepKey, string[]> = {
-  search:   ["Смотрим рынок...", "Опрашиваем экспертов...", "Звоним инсайдерам...", "Готовим отчет..."],
+  search:   ["Смотрим рынок...", "Опрашиваем экспертов...", "Звоним инсайдерам...", "Готовим отчёт..."],
   evaluate: ["Синхронизируем культурный код...", "Ищем сигналы доверия...", "Считаем индекс клише...", "Генерируем советы..."],
   improve:  ["Применяем профиль рынка...", "Вплетаем тренды...", "Переписываем текст...", "Полируем нативный тон..."],
 };
@@ -84,189 +85,249 @@ const STYLE = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
 
 :root {
-  --violet: #7C3AED; --violet-d: #6D28D9; --violet-a: rgba(124,58,237,0.1);
-  --lime: #84CC16; --lime-a: rgba(132,204,22,0.12); --lime-d: #65A30D;
-  --orange: #F97316; --orange-d: #EA6C0A; --orange-a: rgba(249,115,22,0.1);
-  --red: #EF4444;
-  --bg: #F1F5F9; --surface: #FFFFFF;
-  --t1: #0F172A; --t2: #475569; --t3: #94A3B8;
-  --border: rgba(15,23,42,0.1); --border-xs: rgba(15,23,42,0.05);
-  --r: 14px; --r-sm: 10px;
+  --violet:   #7C3AED; --violet-d: #6D28D9; --violet-a: rgba(124,58,237,0.08);
+  --lime:     #84CC16; --lime-a: rgba(132,204,22,0.10); --lime-d: #65A30D; --lime-b: rgba(132,204,22,0.25);
+  --orange:   #F97316; --orange-d: #EA6C0A; --orange-a: rgba(249,115,22,0.08);
+  --red:      #EF4444;
+  --bg:       #F4F6FA;
+  --surface:  #FFFFFF;
+  --t1:       #0F172A; --t2: #4B5675; --t3: #9BA5BC;
+  --border:   rgba(15,23,42,0.08); --border-xs: rgba(15,23,42,0.04);
+  --r:        12px; --r-sm: 8px; --r-lg: 16px;
+  --shadow-sm: 0 1px 4px rgba(15,23,42,0.06);
+  --shadow-md: 0 4px 16px rgba(15,23,42,0.08);
 }
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--t1); line-height: 1.5; }
 
-/* ── SHELL & SIDEBAR ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--t1); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+/* ── ОБОЛОЧКА ── */
 .shell { display: flex; min-height: 100vh; overflow-x: hidden; }
-.sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); padding: 24px 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 100; transition: transform 0.3s ease; flex-shrink: 0; }
-.logo { display: flex; align-items: center; gap: 10px; font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: var(--t1); margin-bottom: 32px; cursor: pointer; background: none; border: none; padding: 0 4px; }
-.logo-mark { width: 28px; height: 28px; background: var(--lime); border-radius: 6px; display: grid; place-items: center; font-size: 14px; font-weight: 800; color: #1a2e05; flex-shrink: 0; }
-.nav-btn { display: flex; align-items: center; gap: 10px; padding: 12px; border: none; border-radius: 10px; background: transparent; cursor: pointer; width: 100%; text-align: left; font-family: inherit; transition: 0.15s; margin-bottom: 6px; }
+
+/* ── САЙДБАР ── */
+.sidebar {
+  width: 228px; flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 12px;
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh;
+  z-index: 100;
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.logo {
+  display: flex; align-items: center; gap: 9px;
+  font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 800;
+  color: var(--t1); margin-bottom: 24px; cursor: pointer;
+  background: none; border: none; padding: 4px 6px;
+  border-radius: 8px; transition: 0.15s;
+}
+.logo:hover { background: var(--bg); }
+.logo-mark { width: 26px; height: 26px; background: var(--lime); border-radius: 6px; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: #1a2e05; flex-shrink: 0; }
+
+.nav-btn { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: none; border-radius: 9px; background: transparent; cursor: pointer; width: 100%; text-align: left; font-family: inherit; transition: 0.12s; margin-bottom: 3px; }
 .nav-btn:hover { background: var(--bg); }
 .nav-btn.active { background: var(--violet-a); }
-.nav-num { width: 24px; height: 24px; border-radius: 6px; background: var(--bg); font-size: 10px; font-weight: 800; color: var(--t3); display: grid; place-items: center; font-family: 'Syne', sans-serif; flex-shrink: 0; }
+.nav-num { width: 22px; height: 22px; border-radius: 5px; background: var(--bg); font-size: 9px; font-weight: 800; color: var(--t3); display: grid; place-items: center; font-family: 'Syne', sans-serif; flex-shrink: 0; }
 .nav-btn.active .nav-num { background: var(--violet); color: white; }
-.nav-label { font-size: 13px; font-weight: 600; color: var(--t2); }
+.nav-label { font-size: 12.5px; font-weight: 600; color: var(--t2); }
 .nav-btn.active .nav-label { color: var(--violet); font-weight: 700; }
 
-/* ── MAIN & TOPBAR ── */
+/* ── ОСНОВНАЯ ОБЛАСТЬ ── */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.topbar { background: var(--surface); border-bottom: 1px solid var(--border); height: 60px; display: flex; align-items: center; padding: 0 28px; position: sticky; top: 0; z-index: 40; justify-content: space-between; gap: 16px; }
-.topbar-left { display: flex; align-items: center; gap: 12px; }
-.hamburger { display: none; background: transparent; border: none; font-size: 24px; cursor: pointer; padding: 4px; color: var(--t2); }
-.topbar-title { font-size: 14px; font-weight: 600; color: var(--t2); white-space: nowrap; }
-.topbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
-/* ── MARKET BUTTON ── */
-.market-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--t1); transition: 0.15s; }
-.market-btn:hover { background: var(--bg); }
+/* ── ТОПБАР ── */
+.topbar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  height: 56px; display: flex; align-items: center;
+  padding: 0 24px; position: sticky; top: 0; z-index: 40;
+  justify-content: space-between; gap: 16px;
+}
+.topbar-left  { display: flex; align-items: center; gap: 10px; }
+.topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.hamburger    { display: none; background: transparent; border: none; font-size: 22px; cursor: pointer; padding: 4px; color: var(--t2); border-radius: 6px; }
+.hamburger:hover { background: var(--bg); }
+.topbar-title { font-size: 13px; font-weight: 600; color: var(--t2); white-space: nowrap; }
+.topbar-sep   { color: var(--border); margin: 0 2px; }
 
-/* ── SETTINGS BUTTON ── */
-.settings-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.15s; position: relative; }
-.settings-btn:hover { background: var(--bg); color: var(--violet); border-color: var(--violet); }
-.settings-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); position: absolute; top: 6px; right: 6px; border: 1.5px solid var(--surface); }
+/* ── КНОПКА РЫНКА (топбар) ── */
+.market-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--t1); transition: 0.13s; box-shadow: var(--shadow-sm); }
+.market-btn:hover { background: var(--bg); box-shadow: var(--shadow-md); }
 
-/* ── MARKET DROPDOWN ── */
+/* ── КНОПКА НАСТРОЕК ── */
+.settings-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.13s; position: relative; box-shadow: var(--shadow-sm); }
+.settings-btn:hover { background: var(--bg); color: var(--violet); border-color: rgba(124,58,237,0.3); }
+.settings-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); position: absolute; top: 5px; right: 5px; border: 1.5px solid var(--surface); }
+
+/* ── ВЫПАДАЮЩИЙ СПИСОК РЫНКОВ ── */
 .market-dropdown-wrap { position: relative; }
-.market-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.12); min-width: 220px; z-index: 100; animation: dropIn 0.15s ease-out; }
-@keyframes dropIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-.market-option { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; transition: 0.1s; }
+.market-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 6px; box-shadow: 0 12px 40px rgba(0,0,0,0.1); min-width: 210px; z-index: 200; animation: dropIn 0.14s ease-out; }
+@keyframes dropIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+.market-option { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 8px; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; transition: 0.1s; }
 .market-option:hover { background: var(--bg); }
-.market-option.active { background: var(--orange-a); }
+.market-option.active { background: var(--lime-a); }
 
-/* ── MARKET SELECTOR (в поиске) ── */
-.market-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
-.market-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px 16px; border: 2px solid var(--border-xs); border-radius: var(--r); background: var(--surface); cursor: pointer; text-align: center; transition: 0.15s; font-family: inherit; }
-.market-card:hover { border-color: var(--border); transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
-.market-card.active { border-color: var(--lime); background: var(--lime-a); box-shadow: 0 4px 16px rgba(132,204,22,0.15); }
-.market-card-flag { font-size: 32px; line-height: 1; display: block; }
-.market-card-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--t1); }
-.market-card-desc { font-size: 11px; color: var(--t3); line-height: 1.4; }
+/* ── ВЫБОР РЫНКА (страница поиска) ── */
+.market-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.market-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 7px; padding: 16px 12px;
+  border: 1.5px solid var(--border-xs);
+  border-radius: var(--r-lg);
+  background: var(--surface); cursor: pointer;
+  text-align: center; transition: 0.15s; font-family: inherit;
+  box-shadow: var(--shadow-sm);
+}
+.market-card:hover { border-color: rgba(132,204,22,0.4); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.market-card.active {
+  border-color: var(--lime); background: var(--lime-a);
+  box-shadow: 0 0 0 3px var(--lime-b), var(--shadow-md);
+  transform: translateY(-2px);
+}
+.market-card-flag { font-size: 28px; line-height: 1; display: block; }
+.market-card-name { font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 800; color: var(--t1); }
 
-/* ── BUTTONS ── */
-.btn-primary { width: 100%; padding: 15px; background: var(--orange); color: #fff; border: none; border-radius: var(--r-sm); font-size: 15px; font-weight: 700; cursor: pointer; transition: 0.15s; display: flex; justify-content: center; align-items: center; gap: 8px; font-family: inherit; }
-.btn-primary:hover:not(:disabled) { background: var(--orange-d); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(249,115,22,0.25); }
+/* ── КНОПКИ ── */
+.btn-primary {
+  width: 100%; padding: 13px; background: var(--orange); color: #fff;
+  border: none; border-radius: var(--r-sm); font-size: 14.5px; font-weight: 700;
+  cursor: pointer; transition: 0.15s; display: flex; justify-content: center;
+  align-items: center; gap: 8px; font-family: inherit; letter-spacing: 0.01em;
+}
+.btn-primary:hover:not(:disabled) { background: var(--orange-d); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(249,115,22,0.28); }
 .btn-primary:disabled { background: var(--t3); cursor: not-allowed; transform: none; box-shadow: none; }
-.btn-action { padding: 10px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--t1); cursor: pointer; transition: 0.15s; font-family: inherit; }
+
+.btn-action { padding: 9px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 13px; font-weight: 600; color: var(--t1); cursor: pointer; transition: 0.13s; font-family: inherit; }
 .btn-action:hover { background: var(--bg); border-color: var(--orange); color: var(--orange); }
 .btn-action.active { background: var(--orange); color: #fff; border-color: var(--orange); }
-.btn-ghost { padding: 8px 16px; background: transparent; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; color: var(--t2); cursor: pointer; transition: 0.15s; }
+
+.btn-ghost { padding: 7px 14px; background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm); font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--t2); cursor: pointer; transition: 0.13s; }
 .btn-ghost:hover { background: var(--bg); }
-.btn-use-trend { width: 100%; padding: 12px; margin-top: auto; background: var(--orange); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.15s; font-family: inherit; }
-.btn-use-trend:hover { background: var(--orange-d); transform: translateY(-1px); }
-.btn-sticky { background: var(--orange); color: #fff; padding: 15px 32px; border-radius: 99px; font-weight: 700; font-size: 15px; border: none; cursor: pointer; box-shadow: 0 8px 24px rgba(249,115,22,0.3); transition: 0.2s; font-family: inherit; }
-.btn-sticky:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(249,115,22,0.4); }
 
-/* ── INPUTS & CARDS ── */
-.page { flex: 1; padding: 32px; max-width: 1200px; width: 100%; margin: 0 auto; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 24px; }
-.field-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 12px; }
-.inp { width: 100%; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: inherit; font-size: 14px; line-height: 1.6; color: var(--t1); resize: vertical; outline: none; transition: 0.15s; min-height: 80px; }
+.btn-use-trend { width: 100%; padding: 10px; margin-top: auto; background: var(--t1); color: #fff; border: none; border-radius: var(--r-sm); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: 0.15s; font-family: inherit; }
+.btn-use-trend:hover { background: var(--violet); transform: translateY(-1px); }
+
+.btn-sticky { background: var(--orange); color: #fff; padding: 13px 28px; border-radius: 99px; font-weight: 700; font-size: 14px; border: none; cursor: pointer; box-shadow: 0 6px 20px rgba(249,115,22,0.3); transition: 0.2s; font-family: inherit; }
+.btn-sticky:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(249,115,22,0.38); }
+
+/* ── ПОЛЯ И КАРТОЧКИ ── */
+.page { flex: 1; padding: 28px 28px 48px; max-width: 1200px; width: 100%; margin: 0 auto; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: var(--shadow-sm); }
+.field-label { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 11px; }
+
+.inp { width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: inherit; font-size: 14px; line-height: 1.6; color: var(--t1); resize: vertical; outline: none; transition: 0.13s; min-height: 80px; }
 .inp:focus { border-color: var(--orange); background: var(--surface); box-shadow: 0 0 0 3px var(--orange-a); }
-input.inp { min-height: auto; resize: none; padding: 12px 16px; }
+input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 
-/* ── LAYOUT ── */
-.split { display: grid; gap: 32px; grid-template-columns: 420px 1fr; align-items: start; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.stack { display: flex; flex-direction: column; gap: 20px; }
+/* ── РАСКЛАДКИ ── */
+.split { display: grid; gap: 24px; grid-template-columns: 400px 1fr; align-items: start; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.stack { display: flex; flex-direction: column; gap: 18px; }
 
-/* ── TOPIC GROUPS ── */
-.topic-section { margin-bottom: 32px; }
-.topic-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.topic-label { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; text-transform: uppercase; color: var(--t3); }
+/* ── ТЕМАТИЧЕСКИЕ ГРУППЫ ── */
+.topic-section { margin-bottom: 28px; }
+.topic-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.topic-label { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--t3); white-space: nowrap; }
 .topic-line { flex: 1; height: 1px; background: var(--border-xs); }
-.news-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.news-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: 0.2s; }
-.news-card:hover { border-color: var(--orange); box-shadow: 0 8px 24px rgba(249,115,22,0.08); transform: translateY(-2px); }
-.news-headline { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--t1); line-height: 1.35; }
+.topic-count { font-size: 10px; font-weight: 700; color: var(--t3); background: var(--bg); padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
+.news-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.news-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; display: flex; flex-direction: column; gap: 10px; transition: 0.18s; box-shadow: var(--shadow-sm); }
+.news-card:hover { border-color: rgba(249,115,22,0.25); box-shadow: 0 6px 20px rgba(249,115,22,0.07); transform: translateY(-2px); }
+.news-headline { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--t1); line-height: 1.35; }
 
-/* ── MODAL ── */
-.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.modal { background: var(--surface); border-radius: var(--r); width: 100%; max-width: 900px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.2); }
-.modal-header { padding: 24px 28px 0; display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
-.modal-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: var(--t1); }
-.modal-subtitle { font-size: 13px; color: var(--t3); margin-top: 4px; line-height: 1.5; }
-.modal-close { background: var(--bg); border: none; border-radius: 8px; width: 32px; height: 32px; font-size: 16px; cursor: pointer; color: var(--t2); display: flex; align-items: center; justify-content: center; transition: 0.15s; flex-shrink: 0; }
+/* ── ПРЕСЕТЫ ── */
+.preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+.preset-card { padding: 14px; border: 1.5px solid var(--border); border-radius: var(--r-lg); background: var(--surface); text-align: left; cursor: pointer; transition: 0.15s; font-family: inherit; box-shadow: var(--shadow-sm); }
+.preset-card:hover { border-color: rgba(249,115,22,0.35); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.preset-card.active { background: var(--orange-a); border-color: var(--orange); box-shadow: 0 0 0 2px rgba(249,115,22,0.15); }
+
+/* ── МОДАЛЬНОЕ ОКНО ── */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(4px); }
+.modal { background: var(--surface); border-radius: var(--r-lg); width: 100%; max-width: 900px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,0.18); border: 1px solid var(--border); }
+.modal-header { padding: 22px 26px 0; display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
+.modal-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--t1); }
+.modal-subtitle { font-size: 12.5px; color: var(--t3); margin-top: 4px; line-height: 1.5; }
+.modal-close { background: var(--bg); border: none; border-radius: 7px; width: 30px; height: 30px; font-size: 15px; cursor: pointer; color: var(--t2); display: flex; align-items: center; justify-content: center; transition: 0.13s; flex-shrink: 0; }
 .modal-close:hover { background: var(--border); }
 
-/* Двухколоночный лейаут редактора */
-.prompt-editor { display: flex; flex: 1; overflow: hidden; margin-top: 20px; }
-.prompt-tabs { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border-xs); padding: 8px; overflow-y: auto; }
-.prompt-tab { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: none; border-radius: 8px; background: transparent; text-align: left; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.12s; margin-bottom: 2px; }
+/* Редактор промптов — двухколоночный */
+.prompt-editor { display: flex; flex: 1; overflow: hidden; margin-top: 18px; }
+.prompt-tabs { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border-xs); padding: 6px; overflow-y: auto; }
+.prompt-tab { display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 11px; border: none; border-radius: 7px; background: transparent; text-align: left; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.12s; margin-bottom: 2px; }
 .prompt-tab:hover { background: var(--bg); }
 .prompt-tab.active { background: var(--violet-a); color: var(--violet); }
-.prompt-tab-icon { font-size: 14px; flex-shrink: 0; }
+.prompt-tab-icon { font-size: 13px; flex-shrink: 0; }
 .prompt-tab-modified { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); margin-left: auto; flex-shrink: 0; }
 
-.prompt-panel { flex: 1; display: flex; flex-direction: column; padding: 20px 24px; overflow: hidden; }
-.prompt-panel-hint { font-size: 12px; color: var(--t3); background: var(--bg); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; line-height: 1.6; border-left: 3px solid var(--violet-a); flex-shrink: 0; }
+.prompt-panel { flex: 1; display: flex; flex-direction: column; padding: 18px 22px; overflow: hidden; }
+.prompt-panel-hint { font-size: 11.5px; color: var(--t3); background: var(--bg); border-radius: 7px; padding: 9px 13px; margin-bottom: 12px; line-height: 1.6; border-left: 3px solid var(--violet-a); flex-shrink: 0; }
 .prompt-panel-hint strong { color: var(--violet); }
-.prompt-textarea { flex: 1; width: 100%; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: 'DM Mono', 'Fira Code', 'Courier New', monospace; font-size: 12.5px; line-height: 1.7; color: var(--t1); resize: none; outline: none; transition: 0.15s; min-height: 300px; }
+.prompt-textarea { flex: 1; width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: 'Fira Code', 'Courier New', monospace; font-size: 12px; line-height: 1.7; color: var(--t1); resize: none; outline: none; transition: 0.13s; min-height: 280px; }
 .prompt-textarea:focus { border-color: var(--violet); background: var(--surface); box-shadow: 0 0 0 3px var(--violet-a); }
 .prompt-textarea.modified { border-color: var(--orange); }
 
-.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-xs); display: flex; align-items: center; gap: 10px; flex-shrink: 0; background: var(--surface); }
+.modal-footer { padding: 14px 22px; border-top: 1px solid var(--border-xs); display: flex; align-items: center; gap: 10px; flex-shrink: 0; background: var(--surface); }
 .modal-footer-status { font-size: 12px; color: var(--t3); margin-right: auto; }
 .modal-footer-status.has-changes { color: var(--orange); font-weight: 600; }
 
-/* ── OVERLAY & RESPONSIVE ── */
-.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 90; }
+/* ── ОВЕРЛЕЙ ── */
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90; }
 
-/* ── LOADER ── */
-.stream-loader { font-family: monospace; font-size: 14px; color: var(--orange-d); background: var(--orange-a); padding: 20px; border-radius: 10px; display: flex; flex-direction: column; gap: 10px; }
+/* ── ЛОАДЕР ── */
+.stream-loader { font-family: monospace; font-size: 13.5px; color: var(--orange-d); background: var(--orange-a); padding: 18px; border-radius: 10px; display: flex; flex-direction: column; gap: 9px; border: 1px solid rgba(249,115,22,0.12); }
 .stream-line { display: flex; align-items: center; gap: 8px; }
 .blink { animation: blink 1s infinite; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-.sticky-footer { position: sticky; bottom: 0; padding: 20px 0; background: linear-gradient(transparent, var(--bg) 30%); margin-top: 24px; display: flex; justify-content: flex-end; z-index: 10; }
+.sticky-footer { position: sticky; bottom: 0; padding: 18px 0; background: linear-gradient(transparent, var(--bg) 35%); margin-top: 20px; display: flex; justify-content: flex-end; z-index: 10; }
 
-/* ── PRESETS ── */
-.preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
-.preset-card { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-align: left; cursor: pointer; transition: 0.15s; font-family: inherit; }
-.preset-card:hover { border-color: var(--orange); background: var(--bg); }
-.preset-card.active { background: var(--orange-a); border-color: var(--orange); }
-
-/* ── MOBILE ── */
+/* ── МОБИЛЬНАЯ ВЕРСИЯ ── */
 @media (max-width: 960px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.1); }
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.09); }
   .sidebar.open { transform: translateX(0); }
   .overlay.show { display: block; }
   .hamburger { display: block; }
-  .split { grid-template-columns: 1fr; }
+  .split { grid-template-columns: 1fr; gap: 18px; }
   .split > div:first-child { position: static !important; }
-  .news-grid { grid-template-columns: 1fr; }
+  .news-grid { grid-template-columns: 1fr 1fr; }
   .topbar { padding: 0 16px; }
-  .page { padding: 20px 16px 40px; }
-  .market-selector { grid-template-columns: 1fr; }
-  .market-card { flex-direction: row; text-align: left; gap: 14px; padding: 16px; }
-  .market-card-flag { font-size: 28px; }
+  .page { padding: 18px 16px 40px; }
+  .market-selector { grid-template-columns: 1fr; gap: 8px; }
+  .market-card { flex-direction: row; text-align: left; gap: 12px; padding: 14px; }
+  .market-card-flag { font-size: 24px; }
   .prompt-editor { flex-direction: column; }
-  .prompt-tabs { width: 100%; border-right: none; border-bottom: 1px solid var(--border-xs); display: flex; flex-wrap: wrap; padding: 8px; gap: 4px; }
-  .modal { max-height: 95vh; }
+  .prompt-tabs { width: 100%; border-right: none; border-bottom: 1px solid var(--border-xs); display: flex; flex-wrap: wrap; padding: 6px; gap: 4px; overflow-y: visible; }
+  .modal { max-height: 96vh; }
+  .preset-grid { grid-template-columns: 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 580px) {
+  .news-grid { grid-template-columns: 1fr; }
+  .topbar-sep { display: none; }
 }
 `;
 
 // ── Компоненты ────────────────────────────────────────────────────────────────
 
 const ProgressStream = ({ steps, activeIdx, quoteIdx }: { steps: string[]; activeIdx: number; quoteIdx: number }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
     <div className="stream-loader">
       {steps.map((s, i) => {
         if (i > activeIdx) return null;
         return (
-          <div key={i} className="stream-line" style={{ opacity: i === activeIdx ? 1 : 0.5 }}>
+          <div key={i} className="stream-line" style={{ opacity: i === activeIdx ? 1 : 0.45 }}>
             <span>{i === activeIdx ? <span className="blink">▶</span> : "✓"}</span>
             <span>{s}</span>
           </div>
         );
       })}
     </div>
-    <div style={{ textAlign: "center", fontStyle: "italic", fontSize: 14, color: "var(--t3)" }}>
+    <div style={{ textAlign: "center", fontStyle: "italic", fontSize: 13, color: "var(--t3)" }}>
       💡 {FUNNY_QUOTES[quoteIdx]}
     </div>
   </div>
 );
 
-// MarketPicker dropdown
+// Дропдаун выбора рынка (топбар)
 const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: MarketKey) => void }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -279,21 +340,18 @@ const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: M
   return (
     <div className="market-dropdown-wrap" ref={ref}>
       <button className="market-btn" onClick={() => setOpen(o => !o)}>
-        <span style={{ fontSize: 16 }}>{m.flag}</span>
+        <span style={{ fontSize: 15 }}>{m.flag}</span>
         <span>{m.labelRu}</span>
-        <span style={{ fontSize: 10, opacity: 0.6 }}>{open ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className="market-dropdown">
           {(Object.entries(MARKETS) as [MarketKey, typeof MARKETS[MarketKey]][]).map(([key, data]) => (
             <button key={key} className={`market-option ${key === market ? "active" : ""}`}
               onClick={() => { onChange(key); setOpen(false); }}>
-              <span style={{ fontSize: 20 }}>{data.flag}</span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{data.labelRu}</div>
-                <div style={{ fontSize: 11, color: "var(--t3)" }}>{data.desc}</div>
-              </div>
-              {key === market && <span style={{ marginLeft: "auto", color: "var(--orange)", fontWeight: 700 }}>✓</span>}
+              <span style={{ fontSize: 19 }}>{data.flag}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 700 }}>{data.labelRu}</span>
+              {key === market && <span style={{ marginLeft: "auto", color: "var(--lime-d)", fontWeight: 800, fontSize: 13 }}>✓</span>}
             </button>
           ))}
         </div>
@@ -305,59 +363,31 @@ const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: M
 // ── Редактор промптов ─────────────────────────────────────────────────────────
 
 const PromptsModal = ({
-  savedPrompts,
-  onSave,
-  onClose,
+  savedPrompts, onSave, onClose,
 }: {
   savedPrompts: PromptStore;
   onSave: (p: PromptStore) => void;
   onClose: () => void;
 }) => {
-  const [activeTab, setActiveTab] = useState<PromptKey>("search");
-  const [systemDefaults, setSystemDefaults] = useState<PromptStore>({});
-  const [localPrompts, setLocalPrompts] = useState<PromptStore>({ ...savedPrompts });
+  const [activeTab,       setActiveTab]       = useState<PromptKey>("search");
+  const [systemDefaults,  setSystemDefaults]  = useState<PromptStore>({});
+  const [localPrompts,    setLocalPrompts]    = useState<PromptStore>({ ...savedPrompts });
   const [loadingDefaults, setLoadingDefaults] = useState(false);
 
-  // Загружаем системные промпты с сервера при открытии
   useEffect(() => {
     setLoadingDefaults(true);
     fetch("/api/resonance-trends?action=prompts")
       .then(r => r.json())
-      .then(data => {
-        if (data.prompts) setSystemDefaults(data.prompts);
-      })
-      .catch(() => {/* silently ignore */})
+      .then(data => { if (data.prompts) setSystemDefaults(data.prompts); })
+      .catch(() => {})
       .finally(() => setLoadingDefaults(false));
   }, []);
 
-  const activeTabMeta = PROMPT_TABS.find(t => t.key === activeTab)!;
-
-  // Текущее значение: если есть пользовательское — показываем его,
-  // иначе — системный дефолт
-  const getCurrentValue = (key: PromptKey): string => {
-    return localPrompts[key] !== undefined ? localPrompts[key]! : (systemDefaults[key] || "");
-  };
-
-  const isModified = (key: PromptKey): boolean => {
-    return localPrompts[key] !== undefined && localPrompts[key] !== systemDefaults[key];
-  };
-
-  const hasAnyModified = PROMPT_TABS.some(t => isModified(t.key));
-
-  const handleChange = (value: string) => {
-    setLocalPrompts(p => ({ ...p, [activeTab]: value }));
-  };
-
-  const handleReset = () => {
-    const def = systemDefaults[activeTab] || "";
-    setLocalPrompts(p => ({ ...p, [activeTab]: def }));
-  };
-
-  const handleResetAll = () => {
-    setLocalPrompts({});
-  };
-
-  const modifiedCount = PROMPT_TABS.filter(t => isModified(t.key)).length;
+  const activeTabMeta   = PROMPT_TABS.find(t => t.key === activeTab)!;
+  const getCurrentValue = (key: PromptKey) => localPrompts[key] !== undefined ? localPrompts[key]! : (systemDefaults[key] || "");
+  const isModified      = (key: PromptKey) => localPrompts[key] !== undefined && localPrompts[key] !== systemDefaults[key];
+  const hasAnyModified  = PROMPT_TABS.some(t => isModified(t.key));
+  const modifiedCount   = PROMPT_TABS.filter(t => isModified(t.key)).length;
 
   return (
     <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -365,22 +395,16 @@ const PromptsModal = ({
         <div className="modal-header">
           <div>
             <h2 className="modal-title">⚙️ Редактор промптов</h2>
-            <p className="modal-subtitle">
-              Просматривайте и редактируйте системные инструкции для каждого этапа. Изменения сохраняются в браузере.
-            </p>
+            <p className="modal-subtitle">Просматривайте и редактируйте инструкции для каждого этапа. Изменения сохраняются в браузере.</p>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         <div className="prompt-editor">
-          {/* Вкладки слева */}
           <div className="prompt-tabs">
             {PROMPT_TABS.map(tab => (
-              <button
-                key={tab.key}
-                className={`prompt-tab ${activeTab === tab.key ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.key)}
-              >
+              <button key={tab.key} className={`prompt-tab ${activeTab === tab.key ? "active" : ""}`}
+                onClick={() => setActiveTab(tab.key)}>
                 <span className="prompt-tab-icon">{tab.icon}</span>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.label}</span>
                 {isModified(tab.key) && <span className="prompt-tab-modified" title="Изменён" />}
@@ -388,30 +412,25 @@ const PromptsModal = ({
             ))}
           </div>
 
-          {/* Редактор справа */}
           <div className="prompt-panel">
             <div className="prompt-panel-hint">
-              <strong>Плейсхолдеры:</strong>{" "}
-              {activeTabMeta.hint.replace("Плейсхолдеры: ", "")}
+              <strong>Переменные:</strong>{" "}{activeTabMeta.hint.replace("Плейсхолдеры: ", "")}
             </div>
-
             {loadingDefaults ? (
-              <div style={{ textAlign: "center", padding: "40px", color: "var(--t3)" }}>
-                Загружаем системные промпты...
-              </div>
+              <div style={{ textAlign: "center", padding: "40px", color: "var(--t3)" }}>Загружаем промпты...</div>
             ) : (
               <textarea
                 className={`prompt-textarea ${isModified(activeTab) ? "modified" : ""}`}
                 value={getCurrentValue(activeTab)}
-                onChange={e => handleChange(e.target.value)}
+                onChange={e => setLocalPrompts(p => ({ ...p, [activeTab]: e.target.value }))}
                 spellCheck={false}
               />
             )}
-
             {isModified(activeTab) && (
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                <button className="btn-ghost" style={{ fontSize: 12, padding: "6px 12px" }} onClick={handleReset}>
-                  ↺ Восстановить по умолчанию
+                <button className="btn-ghost" style={{ fontSize: 12, padding: "5px 11px" }}
+                  onClick={() => setLocalPrompts(p => ({ ...p, [activeTab]: systemDefaults[activeTab] || "" }))}>
+                  ↺ По умолчанию
                 </button>
               </div>
             )}
@@ -420,29 +439,16 @@ const PromptsModal = ({
 
         <div className="modal-footer">
           <span className={`modal-footer-status ${hasAnyModified ? "has-changes" : ""}`}>
-            {hasAnyModified
-              ? `${modifiedCount} промпт${modifiedCount > 1 ? "а" : ""} изменен${modifiedCount > 1 ? "о" : ""}`
-              : "Все промпты — системные по умолчанию"}
+            {hasAnyModified ? `${modifiedCount} промпт${modifiedCount > 1 ? "а" : ""} изменен${modifiedCount > 1 ? "о" : ""}` : "Все промпты — по умолчанию"}
           </span>
-          {hasAnyModified && (
-            <button className="btn-ghost" onClick={handleResetAll} style={{ fontSize: 12 }}>
-              Сбросить всё
-            </button>
-          )}
+          {hasAnyModified && <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setLocalPrompts({})}>Сбросить всё</button>}
           <button className="btn-ghost" onClick={onClose}>Отмена</button>
-          <button
-            className="btn-action active"
-            style={{ minWidth: 120 }}
+          <button className="btn-action active" style={{ minWidth: 110 }}
             onClick={() => {
-              // Сохраняем только реально изменённые промпты
               const toSave: PromptStore = {};
-              PROMPT_TABS.forEach(t => {
-                if (isModified(t.key)) toSave[t.key] = localPrompts[t.key];
-              });
-              onSave(toSave);
-              onClose();
-            }}
-          >
+              PROMPT_TABS.forEach(t => { if (isModified(t.key)) toSave[t.key] = localPrompts[t.key]; });
+              onSave(toSave); onClose();
+            }}>
             Сохранить
           </button>
         </div>
@@ -465,13 +471,9 @@ export default function BreasonApp() {
   const [presetAction,  setPresetAction]  = useState<string>("standard");
   const [keyword,       setKeyword]       = useState("");
 
-  // Промпты: хранятся только те, что реально изменил пользователь
   const [savedPrompts, setSavedPrompts] = useState<PromptStore>({});
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LS_KEY);
-      if (saved) setSavedPrompts(JSON.parse(saved));
-    } catch {}
+    try { const s = localStorage.getItem(LS_KEY); if (s) setSavedPrompts(JSON.parse(s)); } catch {}
   }, []);
 
   const savePrompts = (p: PromptStore) => {
@@ -481,12 +483,9 @@ export default function BreasonApp() {
 
   const hasCustomPrompts = Object.keys(savedPrompts).length > 0;
 
-  // Формируем объект customPrompts для отправки в API
-  // Совмещаем с ключами из route.ts
   const buildApiPrompts = () => ({
     search:   savedPrompts["search"],
     evaluate: savedPrompts["evaluate"],
-    // improve-промпты передаём по имени пресета
     improve:  savedPrompts[`improve_${presetAction}` as PromptKey],
   });
 
@@ -515,8 +514,6 @@ export default function BreasonApp() {
     setStep("search"); setNewsItems(null); setEvalResult(null); setImproveResult(null);
     setSelectedTrend(null); setGlobalText(""); setSidebarOpen(false); setKeyword(""); setKeywordFocus("");
   };
-
-  // ── API handlers ──────────────────────────────────────────────────────────
 
   const handleFetchUrl = async () => {
     if (!urlInput) return;
@@ -586,19 +583,19 @@ export default function BreasonApp() {
   const renderToneBar = (labelL: string, labelR: string, val: number) => {
     const pct = Math.max(0, Math.min(100, ((val + 5) / 10) * 100));
     return (
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--t2)", marginBottom: 8 }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px", color: "var(--t2)", marginBottom: 7 }}>
           <span>{labelL}</span><span>{labelR}</span>
         </div>
-        <div style={{ position: "relative", height: 6, background: "var(--bg)", borderRadius: 99 }}>
-          <div style={{ position: "absolute", left: "50%", top: -2, bottom: -2, width: 2, background: "var(--border)" }} />
-          <div style={{ position: "absolute", top: "50%", width: 16, height: 16, borderRadius: "50%", background: "var(--orange)", border: "2px solid white", transform: "translate(-50%, -50%)", left: `${pct}%`, transition: "left 0.5s cubic-bezier(0.34,1.56,0.64,1)" }} />
+        <div style={{ position: "relative", height: 5, background: "var(--bg)", borderRadius: 99, border: "1px solid var(--border-xs)" }}>
+          <div style={{ position: "absolute", left: "50%", top: -3, bottom: -3, width: 1.5, background: "var(--border)" }} />
+          <div style={{ position: "absolute", top: "50%", width: 14, height: 14, borderRadius: "50%", background: "var(--orange)", border: "2.5px solid white", transform: "translate(-50%, -50%)", left: `${pct}%`, transition: "left 0.5s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: "0 2px 6px rgba(249,115,22,0.3)" }} />
         </div>
       </div>
     );
   };
 
-  // ── RENDER ────────────────────────────────────────────────────────────────
+  // ── РЕНДЕР ───────────────────────────────────────────────────────────────
 
   return (
     <div className="shell">
@@ -610,11 +607,12 @@ export default function BreasonApp() {
         <PromptsModal savedPrompts={savedPrompts} onSave={savePrompts} onClose={() => setPromptsOpen(false)} />
       )}
 
+      {/* ── Сайдбар ── */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <button className="logo" onClick={resetToHome}>
           <div className="logo-mark">B</div>Breason
         </button>
-        <nav style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {(Object.entries(STEPS) as [StepKey, typeof STEPS[StepKey]][]).map(([key, s]) => (
             <button key={key} className={`nav-btn ${step === key ? "active" : ""}`} onClick={() => switchStep(key)}>
               <div className="nav-num">{s.num}</div>
@@ -624,11 +622,14 @@ export default function BreasonApp() {
         </nav>
       </aside>
 
+      {/* ── Основная область ── */}
       <div className="main">
         <header className="topbar">
           <div className="topbar-left">
             <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>☰</button>
-            <span className="topbar-title">Breason / {STEPS[step].label}</span>
+            <span className="topbar-title">
+              Breason <span className="topbar-sep">/</span> {STEPS[step].label}
+            </span>
           </div>
           <div className="topbar-right">
             <button className="settings-btn" onClick={() => setPromptsOpen(true)}>
@@ -641,7 +642,7 @@ export default function BreasonApp() {
 
         <main className="page">
 
-          {/* ── ШАГ 1: ПОИСК ── */}
+          {/* ── ШАГ 1: ПОИСК ТРЕНДОВ ── */}
           {step === "search" && (
             <div className="stack">
               <div className="card">
@@ -650,20 +651,20 @@ export default function BreasonApp() {
                   {(Object.entries(MARKETS) as [MarketKey, typeof MARKETS[MarketKey]][]).map(([key, m]) => (
                     <button key={key} className={`market-card ${market === key ? "active" : ""}`} onClick={() => setMarket(key)}>
                       <span className="market-card-flag">{m.flag}</span>
-                      <div className="market-card-name">{m.labelRu}</div>
-                      <div className="market-card-desc">{m.desc}</div>
+                      <span className="market-card-name">{m.labelRu}</span>
                     </button>
                   ))}
                 </div>
 
                 <p className="field-label">2. Фокус (необязательно)</p>
-                <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-                  <input className="inp" type="text" value={keyword}
+                <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+                  <input
+                    className="inp" type="text" value={keyword}
                     onChange={e => setKeyword(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && !loading && handleSearch()}
-                    placeholder="Например: AI, логистика, fintech..."
+                    placeholder="Например: AI, логистика, финтех..."
                   />
-                  {keyword && <button className="btn-action" onClick={() => setKeyword("")}>✕</button>}
+                  {keyword && <button className="btn-action" onClick={() => setKeyword("")} style={{ flexShrink: 0 }}>✕</button>}
                 </div>
 
                 <button className="btn-primary" onClick={handleSearch} disabled={loading}>
@@ -673,13 +674,13 @@ export default function BreasonApp() {
 
               {loading && <ProgressStream steps={LOADING_MSGS.search} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
               {!loading && error && (
-                <div style={{ color: "var(--red)", padding: 16, background: "rgba(239,68,68,0.06)", borderRadius: 8 }}>{error}</div>
+                <div style={{ color: "var(--red)", padding: "13px 16px", background: "rgba(239,68,68,0.05)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }}>{error}</div>
               )}
 
               {!loading && newsItems && newsItems.length > 0 && (
                 <div>
                   {keywordFocus && (
-                    <div style={{ display: "inline-flex", padding: "6px 16px", background: "var(--orange-a)", color: "var(--orange)", borderRadius: 99, fontSize: 13, fontWeight: 700, marginBottom: 24 }}>
+                    <div style={{ display: "inline-flex", padding: "5px 14px", background: "var(--orange-a)", color: "var(--orange)", borderRadius: 99, fontSize: 12.5, fontWeight: 700, marginBottom: 20, border: "1px solid rgba(249,115,22,0.2)" }}>
                       🔍 Фокус: «{keywordFocus}»
                     </div>
                   )}
@@ -688,17 +689,17 @@ export default function BreasonApp() {
                       <div className="topic-header">
                         <span className="topic-label">{topic}</span>
                         <div className="topic-line" />
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--t3)" }}>{items.length}</span>
+                        <span className="topic-count">{items.length}</span>
                       </div>
                       <div className="news-grid">
                         {items.map((item, i) => (
                           <div className="news-card" key={i}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--orange)", background: "var(--orange-a)", padding: "4px 8px", borderRadius: 6, display: "inline-block", width: "fit-content" }}>
+                            <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--orange)", background: "var(--orange-a)", padding: "3px 8px", borderRadius: 5, display: "inline-block", width: "fit-content" }}>
                               {item.category}
                             </div>
                             <h3 className="news-headline">{item.headline}</h3>
-                            <p style={{ fontSize: 13, color: "var(--t2)", flex: 1, lineHeight: 1.5 }}>{item.summary}</p>
-                            <p style={{ fontSize: 12, color: "var(--t3)", padding: "10px", background: "var(--bg)", borderRadius: 8, borderLeft: "3px solid var(--orange)" }}>
+                            <p style={{ fontSize: 12.5, color: "var(--t2)", flex: 1, lineHeight: 1.55 }}>{item.summary}</p>
+                            <p style={{ fontSize: 11.5, color: "var(--t3)", padding: "9px 11px", background: "var(--bg)", borderRadius: 7, borderLeft: "2.5px solid var(--orange)", lineHeight: 1.5 }}>
                               {item.business_impact}
                             </p>
                             <button className="btn-use-trend" onClick={() => handleUseTrend(item)}>
@@ -714,37 +715,37 @@ export default function BreasonApp() {
             </div>
           )}
 
-          {/* ── ШАГ 2: ОЦЕНКА ── */}
+          {/* ── ШАГ 2: ОЦЕНКА КОНТЕНТА ── */}
           {step === "evaluate" && (
             <div className="split">
-              <div className="stack" style={{ position: "sticky", top: 84 }}>
+              <div className="stack" style={{ position: "sticky", top: 72 }}>
                 <div className="card">
                   <p className="field-label">Контекст</p>
                   {selectedTrend ? (
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "var(--lime-a)", color: "var(--lime-d)", borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 13px", background: "var(--lime-a)", color: "var(--lime-d)", borderRadius: 8, fontSize: 12.5, fontWeight: 600, marginBottom: 18, border: "1px solid rgba(132,204,22,0.25)" }}>
                       🎯 {selectedTrend.headline.length > 35 ? selectedTrend.headline.slice(0, 35) + "…" : selectedTrend.headline}
-                      <span style={{ cursor: "pointer", marginLeft: 4, opacity: 0.6 }} onClick={() => setSelectedTrend(null)}>✕</span>
+                      <span style={{ cursor: "pointer", marginLeft: 4, opacity: 0.5 }} onClick={() => setSelectedTrend(null)}>✕</span>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 13, color: "var(--t3)", marginBottom: 20 }}>Общая оценка (без тренда)</div>
+                    <div style={{ fontSize: 12.5, color: "var(--t3)", marginBottom: 18 }}>Общая оценка (без тренда)</div>
                   )}
 
-                  <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                     <button className={`btn-action ${inputMode === "text" ? "active" : ""}`} onClick={() => setInputMode("text")} style={{ flex: 1 }}>Текст</button>
-                    <button className={`btn-action ${inputMode === "url" ? "active" : ""}`} onClick={() => setInputMode("url")} style={{ flex: 1 }}>URL</button>
+                    <button className={`btn-action ${inputMode === "url" ? "active" : ""}`} onClick={() => setInputMode("url")} style={{ flex: 1 }}>Ссылка</button>
                   </div>
 
                   {inputMode === "url" && (
-                    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                      <input className="inp" style={{ padding: "12px", flex: 1, margin: 0 }} placeholder="https://" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleFetchUrl()} />
-                      <button className="btn-action" onClick={handleFetchUrl} disabled={loading}>Парсить</button>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                      <input className="inp" style={{ padding: "11px 13px", flex: 1, margin: 0 }} placeholder="https://" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleFetchUrl()} />
+                      <button className="btn-action" onClick={handleFetchUrl} disabled={loading}>Загрузить</button>
                     </div>
                   )}
 
-                  <p className="field-label">Маркетинговый контент</p>
+                  <p className="field-label">Маркетинговый текст</p>
                   <textarea className="inp" rows={8} value={globalText} onChange={e => setGlobalText(e.target.value)} placeholder="Вставьте текст для анализа..." />
-                  <button className="btn-primary" onClick={handleEvaluate} disabled={loading || !globalText.trim()} style={{ marginTop: 24 }}>
-                    {loading ? "Аудит..." : `Оценить для ${MARKETS[market].labelRu}`}
+                  <button className="btn-primary" onClick={handleEvaluate} disabled={loading || !globalText.trim()} style={{ marginTop: 20 }}>
+                    {loading ? "Идёт аудит..." : `Оценить для ${MARKETS[market].labelRu}`}
                   </button>
                 </div>
               </div>
@@ -754,8 +755,8 @@ export default function BreasonApp() {
                 {!loading && error && <div style={{ color: "var(--red)" }}>{error}</div>}
                 {!loading && !evalResult && !error && (
                   <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--t3)" }}>
-                    <div style={{ fontSize: 40, opacity: 0.15, marginBottom: 16 }}>◈</div>
-                    <p>Нажмите «Оценить».</p>
+                    <div style={{ fontSize: 38, opacity: 0.12, marginBottom: 14 }}>◈</div>
+                    <p style={{ fontSize: 14 }}>Нажмите «Оценить».</p>
                   </div>
                 )}
 
@@ -764,40 +765,42 @@ export default function BreasonApp() {
                   return (
                     <>
                       <div className="card" style={{ background: vc.bg, borderColor: vc.border }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-                          <div style={{ width: 56, height: 56, borderRadius: 14, background: "var(--surface)", display: "grid", placeItems: "center", fontSize: 26, color: vc.color, boxShadow: "0 4px 16px rgba(0,0,0,0.06)", flexShrink: 0 }}>{vc.icon}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                          <div style={{ width: 52, height: 52, borderRadius: 12, background: "var(--surface)", display: "grid", placeItems: "center", fontSize: 24, color: vc.color, boxShadow: "var(--shadow-md)", flexShrink: 0 }}>{vc.icon}</div>
                           <div>
-                            <h2 style={{ fontFamily: "Syne", fontSize: 24, color: vc.color, margin: 0 }}>{evalResult.verdict} — {vc.label}</h2>
-                            <p style={{ margin: "6px 0 0", fontSize: 15, color: "var(--t1)" }}>{evalResult.verdict_reason}</p>
+                            <h2 style={{ fontFamily: "Syne", fontSize: 22, color: vc.color, margin: 0, fontWeight: 800 }}>{evalResult.verdict} — {vc.label}</h2>
+                            <p style={{ margin: "5px 0 0", fontSize: 14.5, color: "var(--t1)" }}>{evalResult.verdict_reason}</p>
                           </div>
                         </div>
                       </div>
+
                       <div className="grid2">
                         <div className="card">
-                          <p className="field-label" style={{ marginBottom: 20 }}>Карта тона</p>
-                          {renderToneBar("Формальный", "Кэжуал", evalResult.tone_map.formal_casual)}
-                          {renderToneBar("Дерзкий", "Осторожный", evalResult.tone_map.bold_cautious)}
+                          <p className="field-label" style={{ marginBottom: 18 }}>Карта тона</p>
+                          {renderToneBar("Формальный", "Кэжуал",    evalResult.tone_map.formal_casual)}
+                          {renderToneBar("Дерзкий",    "Осторожный", evalResult.tone_map.bold_cautious)}
                           {renderToneBar("Технический", "Про пользу", evalResult.tone_map.technical_benefit)}
                           {renderToneBar("Абстрактный", "Конкретный", evalResult.tone_map.abstract_concrete)}
-                          {renderToneBar("Перевод", "Нативный", evalResult.tone_map.global_native)}
+                          {renderToneBar("Перевод",    "Нативный",   evalResult.tone_map.global_native)}
                         </div>
                         <div className="stack">
                           <div className="card">
                             <p className="field-label">Индекс клише</p>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
-                              <span style={{ fontFamily: "Syne", fontSize: 40, fontWeight: 800, color: evalResult.genericness_score > 60 ? "var(--red)" : "var(--lime-d)" }}>{evalResult.genericness_score}</span>
-                              <span style={{ fontSize: 15, color: "var(--t3)" }}>/100</span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
+                              <span style={{ fontFamily: "Syne", fontSize: 38, fontWeight: 800, color: evalResult.genericness_score > 60 ? "var(--red)" : "var(--lime-d)" }}>{evalResult.genericness_score}</span>
+                              <span style={{ fontSize: 14, color: "var(--t3)" }}>/100</span>
                             </div>
-                            <div>{evalResult.generic_phrases?.map((p, i) => <span key={i} style={{ padding: "6px 12px", background: "#FEE2E2", color: "#B91C1C", fontSize: 12, fontWeight: 600, borderRadius: 8, margin: "0 8px 8px 0", display: "inline-block" }}>«{p}»</span>)}</div>
+                            <div>{evalResult.generic_phrases?.map((p, i) => <span key={i} style={{ padding: "5px 11px", background: "#FEE2E2", color: "#B91C1C", fontSize: 12, fontWeight: 600, borderRadius: 7, margin: "0 7px 7px 0", display: "inline-block" }}>«{p}»</span>)}</div>
                           </div>
                           <div className="card">
                             <p className="field-label">Красные флаги</p>
                             {evalResult.missing_trust_signals?.map((s, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", background: "var(--bg)", borderRadius: 10, fontSize: 13, color: "var(--t2)", borderLeft: "4px solid var(--red)", marginBottom: 10 }}>✕ {s}</div>
+                              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 14px", background: "var(--bg)", borderRadius: 9, fontSize: 13, color: "var(--t2)", borderLeft: "3px solid var(--red)", marginBottom: 8 }}>✕ {s}</div>
                             ))}
                           </div>
                         </div>
                       </div>
+
                       <div className="sticky-footer">
                         <button className="btn-sticky" onClick={() => switchStep("improve")}>✨ Улучшить с учётом правок →</button>
                       </div>
@@ -811,20 +814,20 @@ export default function BreasonApp() {
           {/* ── ШАГ 3: УЛУЧШЕНИЕ ── */}
           {step === "improve" && (
             <div className="split">
-              <div className="stack" style={{ position: "sticky", top: 84 }}>
+              <div className="stack" style={{ position: "sticky", top: 72 }}>
                 <div className="card">
-                  <p className="field-label">1. Целевой формат (Пресеты)</p>
+                  <p className="field-label">1. Целевой формат</p>
                   <div className="preset-grid">
                     {PRESETS.map(p => (
                       <button key={p.id} className={`preset-card ${presetAction === p.id ? "active" : ""}`} onClick={() => setPresetAction(p.id)}>
-                        <div style={{ fontSize: 18, marginBottom: 8 }}>{p.icon}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{p.label}</div>
-                        <div style={{ fontSize: 11, opacity: 0.7, lineHeight: 1.4 }}>{p.desc}</div>
+                        <div style={{ fontSize: 17, marginBottom: 7 }}>{p.icon}</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 3 }}>{p.label}</div>
+                        <div style={{ fontSize: 11, opacity: 0.65, lineHeight: 1.4 }}>{p.desc}</div>
                       </button>
                     ))}
                   </div>
-                  <button className="btn-primary" onClick={handleImprove} disabled={loading || !globalText.trim()} style={{ marginBottom: 24 }}>
-                    {loading ? "Генерация..." : "Сделать красиво"}
+                  <button className="btn-primary" onClick={handleImprove} disabled={loading || !globalText.trim()} style={{ marginBottom: 20 }}>
+                    {loading ? "Генерация..." : "🪄 Применить магию"}
                   </button>
                   <p className="field-label">2. Исходный текст</p>
                   <textarea className="inp" rows={10} value={globalText} onChange={e => setGlobalText(e.target.value)} placeholder="Вставьте текст для обработки..." />
@@ -836,25 +839,25 @@ export default function BreasonApp() {
                 {!loading && error && <div style={{ color: "var(--red)" }}>{error}</div>}
                 {!loading && !improveResult && !error && (
                   <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--t3)" }}>
-                    <div style={{ fontSize: 40, opacity: 0.15, marginBottom: 16 }}>✨</div>
-                    <p>Выберите целевой формат и нажмите кнопку.</p>
+                    <div style={{ fontSize: 38, opacity: 0.12, marginBottom: 14 }}>✨</div>
+                    <p style={{ fontSize: 14 }}>Выберите формат и нажмите кнопку.</p>
                   </div>
                 )}
                 {!loading && improveResult && (
                   <>
-                    <div className="card" style={{ borderLeft: "5px solid var(--orange)", padding: 32 }}>
-                      <div style={{ display: "inline-flex", padding: "8px 16px", background: "var(--orange-a)", color: "var(--orange-d)", borderRadius: 8, fontSize: 13, fontWeight: 700, marginBottom: 24 }}>
+                    <div className="card" style={{ borderLeft: "4px solid var(--orange)" }}>
+                      <div style={{ display: "inline-flex", padding: "7px 14px", background: "var(--orange-a)", color: "var(--orange-d)", borderRadius: 7, fontSize: 12.5, fontWeight: 700, marginBottom: 20, border: "1px solid rgba(249,115,22,0.18)" }}>
                         ✓ {improveResult.tone_achieved}
                       </div>
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 16, lineHeight: 1.8, color: "var(--t1)" }}>{improveResult.improved_local}</div>
+                      <div style={{ whiteSpace: "pre-wrap", fontSize: 15.5, lineHeight: 1.8, color: "var(--t1)" }}>{improveResult.improved_local}</div>
                     </div>
                     <div className="card">
-                      <p className="field-label">Лог изменений</p>
-                      <div className="stack">
+                      <p className="field-label">Что и почему изменено</p>
+                      <div className="stack" style={{ gap: 10 }}>
                         {improveResult.changes?.map((c, i) => (
-                          <div key={i} style={{ padding: 16, background: "var(--bg)", borderRadius: 10, borderLeft: "4px solid var(--violet)" }}>
-                            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{c.what}</div>
-                            <div style={{ fontSize: 14, color: "var(--t2)", lineHeight: 1.5 }}>{c.why}</div>
+                          <div key={i} style={{ padding: 14, background: "var(--bg)", borderRadius: 9, borderLeft: "3px solid var(--violet)" }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5 }}>{c.what}</div>
+                            <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.5 }}>{c.why}</div>
                           </div>
                         ))}
                       </div>
