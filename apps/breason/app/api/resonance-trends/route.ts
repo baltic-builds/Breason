@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+export const maxDuration = 60; // Vercel Serverless Function Timeout
+
 // ── Вшитые профили и промпты ──
 
 const MARKET_PROFILES_API: Record<string, { label: string; language: string; tone: string; trust: string[]; redFlags: string[]; newsSources: string }> = {
@@ -88,7 +90,6 @@ function buildPrompt(action: string, marketKey: string, text: string = "", trend
 async function fetchUrlWithCascade(url: string): Promise<string> {
   let lastError = "";
 
-  // 1. Нативный Fetch (Googlebot UA)
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" },
@@ -106,7 +107,6 @@ async function fetchUrlWithCascade(url: string): Promise<string> {
     }
   } catch (e: any) { lastError = e.message; }
 
-  // 2. Jina AI (строго без encodeURIComponent)
   try {
     const res = await fetch(`https://r.jina.ai/${url}`, {
       headers: { "User-Agent": "BreasonBot" },
@@ -118,7 +118,6 @@ async function fetchUrlWithCascade(url: string): Promise<string> {
     }
   } catch (e: any) { lastError = e.message; }
 
-  // 3. Microlink (с encodeURIComponent)
   try {
     const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`, {
       signal: AbortSignal.timeout(5000)
@@ -135,24 +134,25 @@ async function fetchUrlWithCascade(url: string): Promise<string> {
   throw new Error("Сайт защищен от автоматического чтения. Пожалуйста, скопируйте текст со страницы вручную.");
 }
 
-// ── Вызов ИИ (Динамический выбор Gemini + Groq Fallback) ──
+// ── Вызов ИИ (Тройной Каскад с защитой от зависания Vercel) ──
 
 async function callAI(prompt: string, modelsConfig?: { primary: string; fallback: string }): Promise<any> {
   const primaryModel = modelsConfig?.primary || "gemini-3.1-flash-lite-preview";
   const fallbackModel = modelsConfig?.fallback || "llama-3.3-70b-versatile";
 
-  // Маппинг для Groq (приведение UI строк к валидным API названиям, если нужно)
   const groqModelMap: Record<string, string> = {
     "llama-3.3-70b": "llama-3.3-70b-versatile",
-    "llama-4-scout": "llama-3.3-70b-versatile", // Fallback if Llama 4 is not available on Groq yet
-    "gpt-oss-120b": "llama-3.3-70b-versatile", // Fallback if GPT OSS is unavailable
-    "gpt-oss-20b": "gemma2-9b-it", // Alternative small model
+    "llama-4-scout": "llama-3.3-70b-versatile", 
+    "gpt-oss-120b": "llama-3.3-70b-versatile", 
+    "gpt-oss-20b": "gemma2-9b-it", 
     "qwen-3-32b": "gemma2-9b-it" 
   };
   const resolvedFallback = groqModelMap[fallbackModel] || fallbackModel;
+  
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+  // Попытка 1: Выбранная Gemini модель
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
     const model = genAI.getGenerativeModel({
       model: primaryModel,
       generationConfig: { responseMimeType: "application/json" }
@@ -160,25 +160,51 @@ async function callAI(prompt: string, modelsConfig?: { primary: string; fallback
     const result = await model.generateContent(prompt);
     const text = result.response.text().replace(/```(json)?\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(text);
-  } catch (e: any) {
-    console.warn(`[Gemini Failed] (${primaryModel}) ${e.message}. Trying Groq (${resolvedFallback})...`);
-    if (!process.env.GROQ_API_KEY) throw new Error(`Gemini failed: ${e.message}. No Groq API Key for fallback.`);
+  } catch (e1: any) {
+    console.warn(`[Gemini Primary Failed] (${primaryModel}) ${e1.message}. Trying Groq (${resolvedFallback})...`);
     
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: resolvedFallback,
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
-      })
-    });
-    if (!res.ok) {
-      const groqErr = await res.text();
-      throw new Error(`Both Gemini and Groq failed. Groq error: ${groqErr}`);
+    // Попытка 2: Groq Fallback с жестким таймаутом
+    try {
+      if (!process.env.GROQ_API_KEY) throw new Error("No Groq API Key");
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 секунд макс на Groq
+
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: resolvedFallback,
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" }
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const groqErr = await res.text();
+        throw new Error(`Groq HTTP error: ${groqErr}`);
+      }
+      const data = await res.json();
+      return JSON.parse(data.choices[0].message.content);
+    } catch (e2: any) {
+        console.warn(`[Groq Fallback Failed] ${e2.message}. Trying Gemini Final Fallback...`);
+        
+        // Попытка 3: Экстренный стабильный Fallback
+        try {
+            const backupModel = genAI.getGenerativeModel({
+                model: "gemini-2.5-flash",
+                generationConfig: { responseMimeType: "application/json" }
+            });
+            const result = await backupModel.generateContent(prompt);
+            const text = result.response.text().replace(/```(json)?\n?/g, '').replace(/```\n?/g, '').trim();
+            return JSON.parse(text);
+        } catch (e3: any) {
+            console.error("All AI fallbacks failed:", e3.message);
+            throw new Error("Все нейросети временно недоступны из-за высокой нагрузки. Пожалуйста, попробуйте через пару минут.");
+        }
     }
-    const data = await res.json();
-    return JSON.parse(data.choices[0].message.content);
   }
 }
 
@@ -215,12 +241,11 @@ export async function POST(req: Request) {
        
        if (process.env.SERPER_API_KEY) {
            try {
-               // Ищем новости только по профильным бизнес-сайтам конкретной страны
                const q = keyword ? `B2B ${keyword} (${pStr.newsSources})` : `B2B SaaS business trends (${pStr.newsSources})`;
                const res = await fetch("https://google.serper.dev/search", {
                    method: "POST",
                    headers: { "X-API-KEY": process.env.SERPER_API_KEY, "Content-Type": "application/json" },
-                   body: JSON.stringify({ q, num: 10, tbs: "qdr:m1" }) // Новости за последний месяц
+                   body: JSON.stringify({ q, num: 10, tbs: "qdr:m1" })
                });
                const data = await res.json();
                if (data.organic && data.organic.length > 0) {
