@@ -1,38 +1,39 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-lite";
-const GROQ_MODEL   = "llama-3.3-70b-versatile";
+// ── Вшитые профили и промпты ──
 
-// ── Вшитые профили и промпты (чтобы не трогать пакеты) ──
-
-const MARKET_PROFILES_API: Record<string, { label: string; language: string; tone: string; trust: string[]; redFlags: string[] }> = {
+const MARKET_PROFILES_API: Record<string, { label: string; language: string; tone: string; trust: string[]; redFlags: string[]; newsSources: string }> = {
   germany: {
     label: "Германия (DACH)", language: "German",
     tone: "Формальный, точный, процессный, без пустых обещаний",
     trust: ["GDPR", "ISO", "Локальный хостинг", "SLA"],
-    redFlags: ["revolutionary", "game-changer", "seamless", "all-in-one"]
+    redFlags: ["revolutionary", "game-changer", "seamless", "all-in-one"],
+    newsSources: "site:handelsblatt.com OR site:wiwo.de OR site:manager-magazin.de"
   },
   poland: {
     label: "Польша", language: "Polish",
     tone: "Прагматичный, прямой, ориентированный на ROI и конкретику",
     trust: ["Кейсы", "ROI", "Прозрачные цены"],
-    redFlags: ["empty promises", "vague benefits", "marketing fluff"]
+    redFlags: ["empty promises", "vague benefits", "marketing fluff"],
+    newsSources: "site:pb.pl OR site:forbes.pl OR site:rp.pl"
   },
   brazil: {
     label: "Бразилия", language: "Portuguese",
     tone: "Теплый, человекоцентричный, акцент на отношениях",
     trust: ["Поддержка на португальском", "WhatsApp", "LGPD"],
-    redFlags: ["холодный корпоративный тон", "агрессивные продажи"]
+    redFlags: ["холодный корпоративный тон", "агрессивные продажи"],
+    newsSources: "site:valor.globo.com OR site:exame.com OR site:infomoney.com.br"
   }
 };
 
 const SYSTEM_PROMPT_TEMPLATES: Record<string, string> = {
-  search: `Ты — B2B аналитик. Рынок: {{MARKET}}. Составь 12 актуальных трендов на основе последних событий (По 3 на: Продажи, Финансы, Ритейл, IT).
+  search: `Ты — B2B аналитик. Рынок: {{MARKET}}. 
+Составь 12 актуальных бизнес-трендов на основе предоставленных новостей из ключевых деловых медиа.
+ОБЯЗАТЕЛЬНО для каждого тренда в поле 'business_impact' напиши: "Как B2B SaaS бизнес может использовать этот тренд для продаж или маркетинга".
 {{NEWS_CONTEXT}}
 {{CUSTOM_INSTRUCTIONS}}
-Ответь ТОЛЬКО в JSON: { "items": [{ "headline": "", "topic": "", "category": "", "summary": "", "business_impact": "" }] }`,
+Ответь ТОЛЬКО в JSON: { "items": [{ "headline": "", "topic": "Продажи, Финансы, Ритейл или IT", "category": "", "summary": "", "business_impact": "" }] }`,
 
   evaluate: `Ты — эксперт по локализации для рынка {{MARKET}}. Оцени текст.
 ТОН: {{TONE}}. ДОВЕРИЕ: {{TRUST}}. ИЗБЕГАТЬ: {{RED_FLAGS}}.
@@ -76,7 +77,7 @@ function buildPrompt(action: string, marketKey: string, text: string = "", trend
       .replace(/{{TEXT}}/g, text);
 
   if (action.startsWith('improve')) {
-      prompt += `\nВАЖНО: Результат верни СТРОГО в JSON: { "improved_text": "на английском", "improved_local": "на ${p.language}", "tone_achieved": "описание тона на русском", "changes": [{"what": "что изменили (RU)", "why": "почему (RU)"}] }`;
+      prompt += `\nВАЖНО: СОХРАНИ ПОЛНЫЙ ОБЪЕМ ИСХОДНОГО ТЕКСТА И ВСЕ СМЫСЛОВЫЕ БЛОКИ. Не сокращай текст, только улучшай его стиль.\nРезультат верни СТРОГО в JSON: { "improved_text": "полная версия на английском", "improved_local": "полная версия на ${p.language}", "tone_achieved": "описание тона на русском", "changes": [{"what": "что изменили (RU)", "why": "почему (RU)"}] }`;
   }
 
   return prompt;
@@ -134,30 +135,48 @@ async function fetchUrlWithCascade(url: string): Promise<string> {
   throw new Error("Сайт защищен от автоматического чтения. Пожалуйста, скопируйте текст со страницы вручную.");
 }
 
-// ── Вызов ИИ (с Groq Fallback) ──
+// ── Вызов ИИ (Динамический выбор Gemini + Groq Fallback) ──
 
-async function callAI(prompt: string): Promise<any> {
+async function callAI(prompt: string, modelsConfig?: { primary: string; fallback: string }): Promise<any> {
+  const primaryModel = modelsConfig?.primary || "gemini-3.1-flash-lite-preview";
+  const fallbackModel = modelsConfig?.fallback || "llama-3.3-70b-versatile";
+
+  // Маппинг для Groq (приведение UI строк к валидным API названиям, если нужно)
+  const groqModelMap: Record<string, string> = {
+    "llama-3.3-70b": "llama-3.3-70b-versatile",
+    "llama-4-scout": "llama-3.3-70b-versatile", // Fallback if Llama 4 is not available on Groq yet
+    "gpt-oss-120b": "llama-3.3-70b-versatile", // Fallback if GPT OSS is unavailable
+    "gpt-oss-20b": "gemma2-9b-it", // Alternative small model
+    "qwen-3-32b": "gemma2-9b-it" 
+  };
+  const resolvedFallback = groqModelMap[fallbackModel] || fallbackModel;
+
   try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
     const model = genAI.getGenerativeModel({
-      model: GEMINI_MODEL,
+      model: primaryModel,
       generationConfig: { responseMimeType: "application/json" }
     });
     const result = await model.generateContent(prompt);
     const text = result.response.text().replace(/```(json)?\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(text);
   } catch (e: any) {
-    console.warn("Gemini failed, trying Groq:", e.message);
-    if (!process.env.GROQ_API_KEY) throw e;
+    console.warn(`[Gemini Failed] (${primaryModel}) ${e.message}. Trying Groq (${resolvedFallback})...`);
+    if (!process.env.GROQ_API_KEY) throw new Error(`Gemini failed: ${e.message}. No Groq API Key for fallback.`);
+    
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Authorization": `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: resolvedFallback,
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" }
       })
     });
-    if (!res.ok) throw new Error("Groq fallback failed");
+    if (!res.ok) {
+      const groqErr = await res.text();
+      throw new Error(`Both Gemini and Groq failed. Groq error: ${groqErr}`);
+    }
     const data = await res.json();
     return JSON.parse(data.choices[0].message.content);
   }
@@ -176,9 +195,8 @@ export async function GET(request: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { action, market, text, keyword, trendContext, preset, customPrompts, url } = body;
+    const { action, market, text, keyword, trendContext, preset, customPrompts, url, models } = body;
 
-    // ОБРАБОТКА URL ЧЕРЕЗ ЕДИНЫЙ ENDPOINT
     if (action === "fetch-url") {
       if (!url) return NextResponse.json({ error: "No URL provided" }, { status: 400 });
       try {
@@ -192,40 +210,46 @@ export async function POST(req: Request) {
     if (!market) return NextResponse.json({ error: "Market required" }, { status: 400 });
 
     if (action === "search") {
-       let newsContext = "Реальные новости недоступны.";
+       let newsContext = "Реальные новости недоступны. Сгенерируй тренды на основе своих знаний за 2026 год.";
+       const pStr = MARKET_PROFILES_API[market] || MARKET_PROFILES_API.germany;
+       
        if (process.env.SERPER_API_KEY) {
            try {
-               const q = keyword ? `B2B trends ${market} ${keyword}` : `B2B software trends ${market} 2026`;
-               const res = await fetch("https://google.serper.dev/news", {
+               // Ищем новости только по профильным бизнес-сайтам конкретной страны
+               const q = keyword ? `B2B ${keyword} (${pStr.newsSources})` : `B2B SaaS business trends (${pStr.newsSources})`;
+               const res = await fetch("https://google.serper.dev/search", {
                    method: "POST",
                    headers: { "X-API-KEY": process.env.SERPER_API_KEY, "Content-Type": "application/json" },
-                   body: JSON.stringify({ q, num: 10, tbs: "qdr:m3" })
+                   body: JSON.stringify({ q, num: 10, tbs: "qdr:m1" }) // Новости за последний месяц
                });
                const data = await res.json();
-               if (data.news) {
-                   newsContext = data.news.map((n: any) => `[${n.source}] ${n.title}: ${n.snippet}`).join('\n\n');
+               if (data.organic && data.organic.length > 0) {
+                   newsContext = data.organic.map((n: any) => `[${n.title}] ${n.snippet}`).join('\n\n');
                }
-           } catch (e) {}
+           } catch (e) {
+               console.warn("Serper Fetch Failed:", e);
+           }
        }
-       const pStr = MARKET_PROFILES_API[market] || MARKET_PROFILES_API.germany;
+       
        let prompt = customPrompts?.search || SYSTEM_PROMPT_TEMPLATES.search;
        prompt = prompt.replace('{{MARKET}}', pStr.label)
-                      .replace('{{NEWS_CONTEXT}}', `КОНТЕКСТ ИЗ СМИ:\n${newsContext}`)
+                      .replace('{{NEWS_CONTEXT}}', `ПОСЛЕДНИЕ ЗАГОЛОВКИ БИЗНЕС-СМИ:\n${newsContext}`)
                       .replace('{{CUSTOM_INSTRUCTIONS}}', keyword ? `ФОКУС НА: ${keyword}` : '');
-       const data = await callAI(prompt);
+       
+       const data = await callAI(prompt, models);
        return NextResponse.json(data);
     }
 
     if (action === "evaluate") {
        const prompt = buildPrompt("evaluate", market, text, trendContext, customPrompts);
-       const data = await callAI(prompt);
+       const data = await callAI(prompt, models);
        return NextResponse.json(data);
     }
 
     if (action === "improve") {
        const promptKey = preset ? `improve_${preset}` : "improve_standard";
        const prompt = buildPrompt(promptKey, market, text, trendContext, customPrompts);
-       const data = await callAI(prompt);
+       const data = await callAI(prompt, models);
        return NextResponse.json(data);
     }
 
