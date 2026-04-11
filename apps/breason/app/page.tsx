@@ -42,7 +42,6 @@ const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: stri
   FOREIGN:    { color: "#BE123C", bg: "rgba(225,29,72,0.08)",   border: "rgba(225,29,72,0.3)",   icon: "✕", label: "Чужеродный контент" },
 };
 
-// Все пресеты — полностью на русском
 const PRESETS = [
   { id: "icebreaker",     icon: "🧊", label: "Холодное письмо",  desc: "LinkedIn / первый контакт"  },
   { id: "thought_leader", icon: "💡", label: "Лидер мнений",     desc: "Экспертный материал"        },
@@ -53,14 +52,14 @@ const PRESETS = [
 ];
 
 const PROMPT_TABS: { key: PromptKey; label: string; icon: string; hint: string }[] = [
-  { key: "search",                 icon: "🔍", label: "Поиск трендов",   hint: "Плейсхолдеры: {{MARKET}}, {{TODAY}}, {{NEWS_CONTEXT}}, {{KEYWORD_FOCUS}}" },
-  { key: "evaluate",               icon: "◈",  label: "Оценка контента", hint: "Плейсхолдеры: {{MARKET}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TEXT}}, {{TREND_CONTEXT}}" },
-  { key: "improve_icebreaker",     icon: "🧊", label: "Холодное письмо", hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_thought_leader", icon: "💡", label: "Лидер мнений",    hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_landing_page",   icon: "📄", label: "Лендинг",         hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
-  { key: "improve_follow_up",      icon: "👋", label: "Напоминание",      hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_social",         icon: "📣", label: "Социальные сети", hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
-  { key: "improve_standard",       icon: "🪄", label: "Стандартная правка", hint: "Плейсхолдеры: {{MARKET}}, {{LANGUAGE}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TREND_NAME}}, {{TEXT}}" },
+  { key: "search",                 icon: "🔍", label: "Поиск трендов",   hint: "Переменные: {{MARKET}}, {{TODAY}}, {{NEWS_CONTEXT}}, {{KEYWORD_FOCUS}}" },
+  { key: "evaluate",               icon: "◈",  label: "Оценка контента", hint: "Переменные: {{MARKET}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TEXT}}, {{TREND_CONTEXT}}" },
+  { key: "improve_icebreaker",     icon: "🧊", label: "Холодное письмо", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
+  { key: "improve_thought_leader", icon: "💡", label: "Лидер мнений",    hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
+  { key: "improve_landing_page",   icon: "📄", label: "Лендинг",         hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
+  { key: "improve_follow_up",      icon: "👋", label: "Напоминание",      hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
+  { key: "improve_social",         icon: "📣", label: "Социальные сети", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
+  { key: "improve_standard",       icon: "🪄", label: "Стандартная правка", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TREND_NAME}}, {{TEXT}}" },
 ];
 
 const LOADING_MSGS: Record<StepKey, string[]> = {
@@ -184,7 +183,8 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
   box-shadow: 0 0 0 3px var(--lime-b), var(--shadow-md);
   transform: translateY(-2px);
 }
-.market-card-flag { font-size: 28px; line-height: 1; display: block; }
+/* Форсируем шрифты для эмодзи на десктопе */
+.market-card-flag { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: 28px; line-height: 1; display: block; margin-bottom: 4px; }
 .market-card-name { font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 800; color: var(--t1); }
 
 /* ── КНОПКИ ── */
@@ -211,11 +211,11 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
 .btn-sticky:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(249,115,22,0.38); }
 
 /* ── ПОЛЯ И КАРТОЧКИ ── */
-.page { flex: 1; padding: 28px 28px 48px; max-width: 1200px; width: 100%; margin: 0 auto; }
+.page { flex: 1; padding: 28px 28px 48px; max-width: 1200px; width: 100%; margin: 0 auto; box-sizing: border-box; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: var(--shadow-sm); }
 .field-label { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 11px; }
 
-.inp { width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: inherit; font-size: 14px; line-height: 1.6; color: var(--t1); resize: vertical; outline: none; transition: 0.13s; min-height: 80px; }
+.inp { width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: inherit; font-size: 14px; line-height: 1.6; color: var(--t1); resize: vertical; outline: none; transition: 0.13s; min-height: 80px; box-sizing: border-box; }
 .inp:focus { border-color: var(--orange); background: var(--surface); box-shadow: 0 0 0 3px var(--orange-a); }
 input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 
@@ -250,7 +250,7 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 .modal-close { background: var(--bg); border: none; border-radius: 7px; width: 30px; height: 30px; font-size: 15px; cursor: pointer; color: var(--t2); display: flex; align-items: center; justify-content: center; transition: 0.13s; flex-shrink: 0; }
 .modal-close:hover { background: var(--border); }
 
-/* Редактор промптов — двухколоночный */
+/* Редактор промптов */
 .prompt-editor { display: flex; flex: 1; overflow: hidden; margin-top: 18px; }
 .prompt-tabs { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border-xs); padding: 6px; overflow-y: auto; }
 .prompt-tab { display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 11px; border: none; border-radius: 7px; background: transparent; text-align: left; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.12s; margin-bottom: 2px; }
@@ -262,7 +262,7 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 .prompt-panel { flex: 1; display: flex; flex-direction: column; padding: 18px 22px; overflow: hidden; }
 .prompt-panel-hint { font-size: 11.5px; color: var(--t3); background: var(--bg); border-radius: 7px; padding: 9px 13px; margin-bottom: 12px; line-height: 1.6; border-left: 3px solid var(--violet-a); flex-shrink: 0; }
 .prompt-panel-hint strong { color: var(--violet); }
-.prompt-textarea { flex: 1; width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: 'Fira Code', 'Courier New', monospace; font-size: 12px; line-height: 1.7; color: var(--t1); resize: none; outline: none; transition: 0.13s; min-height: 280px; }
+.prompt-textarea { flex: 1; width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: 'Fira Code', 'Courier New', monospace; font-size: 12px; line-height: 1.7; color: var(--t1); resize: none; outline: none; transition: 0.13s; min-height: 280px; box-sizing: border-box; }
 .prompt-textarea:focus { border-color: var(--violet); background: var(--surface); box-shadow: 0 0 0 3px var(--violet-a); }
 .prompt-textarea.modified { border-color: var(--orange); }
 
@@ -271,7 +271,8 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 .modal-footer-status.has-changes { color: var(--orange); font-weight: 600; }
 
 /* ── ОВЕРЛЕЙ ── */
-.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90; }
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 90; backdrop-filter: blur(4px); transition: opacity 0.3s ease; opacity: 0; pointer-events: none; }
+.overlay.show { display: block; opacity: 1; pointer-events: auto; }
 
 /* ── ЛОАДЕР ── */
 .stream-loader { font-family: monospace; font-size: 13.5px; color: var(--orange-d); background: var(--orange-a); padding: 18px; border-radius: 10px; display: flex; flex-direction: column; gap: 9px; border: 1px solid rgba(249,115,22,0.12); }
@@ -282,18 +283,18 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 
 /* ── МОБИЛЬНАЯ ВЕРСИЯ ── */
 @media (max-width: 960px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.09); }
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.09); z-index: 100; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); }
   .sidebar.open { transform: translateX(0); }
-  .overlay.show { display: block; }
+  .overlay { display: block; } /* Оверлей всегда готов, но видим только с классом show */
   .hamburger { display: block; }
   .split { grid-template-columns: 1fr; gap: 18px; }
   .split > div:first-child { position: static !important; }
   .news-grid { grid-template-columns: 1fr 1fr; }
   .topbar { padding: 0 16px; }
-  .page { padding: 18px 16px 40px; }
+  .page { padding: 16px 16px 40px; }
   .market-selector { grid-template-columns: 1fr; gap: 8px; }
   .market-card { flex-direction: row; text-align: left; gap: 12px; padding: 14px; }
-  .market-card-flag { font-size: 24px; }
+  .market-card-flag { font-size: 24px; margin-bottom: 0; }
   .prompt-editor { flex-direction: column; }
   .prompt-tabs { width: 100%; border-right: none; border-bottom: 1px solid var(--border-xs); display: flex; flex-wrap: wrap; padding: 6px; gap: 4px; overflow-y: visible; }
   .modal { max-height: 96vh; }
@@ -327,7 +328,6 @@ const ProgressStream = ({ steps, activeIdx, quoteIdx }: { steps: string[]; activ
   </div>
 );
 
-// Дропдаун выбора рынка (топбар)
 const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: MarketKey) => void }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -340,7 +340,7 @@ const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: M
   return (
     <div className="market-dropdown-wrap" ref={ref}>
       <button className="market-btn" onClick={() => setOpen(o => !o)}>
-        <span style={{ fontSize: 15 }}>{m.flag}</span>
+        <span style={{ fontSize: 15, fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", sans-serif' }}>{m.flag}</span>
         <span>{m.labelRu}</span>
         <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>{open ? "▲" : "▼"}</span>
       </button>
@@ -349,7 +349,7 @@ const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: M
           {(Object.entries(MARKETS) as [MarketKey, typeof MARKETS[MarketKey]][]).map(([key, data]) => (
             <button key={key} className={`market-option ${key === market ? "active" : ""}`}
               onClick={() => { onChange(key); setOpen(false); }}>
-              <span style={{ fontSize: 19 }}>{data.flag}</span>
+              <span style={{ fontSize: 19, fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", sans-serif' }}>{data.flag}</span>
               <span style={{ fontSize: 13.5, fontWeight: 700 }}>{data.labelRu}</span>
               {key === market && <span style={{ marginLeft: "auto", color: "var(--lime-d)", fontWeight: 800, fontSize: 13 }}>✓</span>}
             </button>
@@ -359,8 +359,6 @@ const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: M
     </div>
   );
 };
-
-// ── Редактор промптов ─────────────────────────────────────────────────────────
 
 const PromptsModal = ({
   savedPrompts, onSave, onClose,
@@ -414,7 +412,7 @@ const PromptsModal = ({
 
           <div className="prompt-panel">
             <div className="prompt-panel-hint">
-              <strong>Переменные:</strong>{" "}{activeTabMeta.hint.replace("Плейсхолдеры: ", "")}
+              <strong>Переменные:</strong>{" "}{activeTabMeta.hint.replace("Переменные: ", "")}
             </div>
             {loadingDefaults ? (
               <div style={{ textAlign: "center", padding: "40px", color: "var(--t3)" }}>Загружаем промпты...</div>
@@ -456,8 +454,6 @@ const PromptsModal = ({
     </div>
   );
 };
-
-// ── Главный компонент ─────────────────────────────────────────────────────────
 
 export default function BreasonApp() {
   const [step,        setStep]        = useState<StepKey>("search");
@@ -518,12 +514,16 @@ export default function BreasonApp() {
   const handleFetchUrl = async () => {
     if (!urlInput) return;
     setLoading(true);
+    setError(null);
     try {
-      const res  = await fetch("/api/fetch-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: urlInput }) });
+      const res  = await fetch("/api/resonance-trends", { 
+        method: "POST", headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ action: "fetch-url", url: urlInput }) 
+      });
       const data = await res.json();
       if (data.text) setGlobalText(data.text);
       else setError(data.error || "Ошибка парсинга URL");
-    } catch { setError("Ошибка сети"); }
+    } catch { setError("Ошибка сети при загрузке страницы"); }
     finally   { setLoading(false); }
   };
 
@@ -595,12 +595,11 @@ export default function BreasonApp() {
     );
   };
 
-  // ── РЕНДЕР ───────────────────────────────────────────────────────────────
-
   return (
     <div className="shell">
       <style>{STYLE}</style>
 
+      {/* Оверлей для мобильной версии, клик закрывает меню */}
       <div className={`overlay ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
 
       {promptsOpen && (
