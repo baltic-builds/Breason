@@ -22,6 +22,11 @@ interface ImproveResult  { improved_text: string; improved_local: string; change
 type PromptKey = "search" | "evaluate" | "improve_icebreaker" | "improve_thought_leader" | "improve_landing_page" | "improve_follow_up" | "improve_social" | "improve_standard";
 type PromptStore = Partial<Record<PromptKey, string>>;
 
+interface AppSettings {
+  models: { primary: string; fallback: string; };
+  prompts: PromptStore;
+}
+
 // ── Константы ─────────────────────────────────────────────────────────────────
 
 const MARKETS: Record<MarketKey, { labelRu: string; flag: string }> = {
@@ -62,8 +67,24 @@ const PROMPT_TABS: { key: PromptKey; label: string; icon: string; hint: string }
   { key: "improve_standard",       icon: "🪄", label: "Стандартная правка", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TREND_NAME}}, {{TEXT}}" },
 ];
 
+const AVAILABLE_MODELS = {
+  primary: [
+    { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview (Быстрый)" },
+    { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview (Умный)" },
+    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
+    { id: "gemini-flash-latest", label: "Gemini Flash Latest" }
+  ],
+  fallback: [
+    { id: "llama-3.3-70b", label: "Llama 3.3 70B" },
+    { id: "llama-4-scout", label: "Llama 4 Scout" },
+    { id: "gpt-oss-120b", label: "GPT OSS 120B" },
+    { id: "gpt-oss-20b", label: "GPT OSS 20B" },
+    { id: "qwen-3-32b", label: "Qwen 3 32B" }
+  ]
+};
+
 const LOADING_MSGS: Record<StepKey, string[]> = {
-  search:   ["Смотрим рынок...", "Опрашиваем экспертов...", "Звоним инсайдерам...", "Готовим отчёт..."],
+  search:   ["Смотрим рынок...", "Опрашиваем экспертов...", "Читаем Bloomberg...", "Готовим отчёт..."],
   evaluate: ["Синхронизируем культурный код...", "Ищем сигналы доверия...", "Считаем индекс клише...", "Генерируем советы..."],
   improve:  ["Применяем профиль рынка...", "Вплетаем тренды...", "Переписываем текст...", "Полируем нативный тон..."],
 };
@@ -76,7 +97,11 @@ const FUNNY_QUOTES = [
   "Зарабатывайте больше, и доход вырастет",
 ];
 
-const LS_KEY = "breason_prompts_v2";
+const LS_KEY = "breason_settings_v3";
+const DEFAULT_SETTINGS: AppSettings = {
+  models: { primary: "gemini-3.1-flash-lite-preview", fallback: "llama-3.3-70b" },
+  prompts: {}
+};
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -132,6 +157,10 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
 .nav-label { font-size: 12.5px; font-weight: 600; color: var(--t2); }
 .nav-btn.active .nav-label { color: var(--violet); font-weight: 700; }
 
+.settings-nav-btn { margin-top: auto; border-top: 1px solid var(--border-xs); padding-top: 14px; }
+.settings-nav-btn .nav-btn { color: var(--t2); justify-content: flex-start; padding: 12px 10px; }
+.settings-nav-btn .nav-btn:hover { color: var(--t1); background: var(--bg); }
+
 /* ── ОСНОВНАЯ ОБЛАСТЬ ── */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
@@ -152,11 +181,6 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
 /* ── КНОПКА РЫНКА (топбар) ── */
 .market-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--t1); transition: 0.13s; box-shadow: var(--shadow-sm); }
 .market-btn:hover { background: var(--bg); box-shadow: var(--shadow-md); }
-
-/* ── КНОПКА НАСТРОЕК ── */
-.settings-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.13s; position: relative; box-shadow: var(--shadow-sm); }
-.settings-btn:hover { background: var(--bg); color: var(--violet); border-color: rgba(124,58,237,0.3); }
-.settings-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); position: absolute; top: 5px; right: 5px; border: 1.5px solid var(--surface); }
 
 /* ── ВЫПАДАЮЩИЙ СПИСОК РЫНКОВ ── */
 .market-dropdown-wrap { position: relative; }
@@ -183,7 +207,6 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
   box-shadow: 0 0 0 3px var(--lime-b), var(--shadow-md);
   transform: translateY(-2px);
 }
-/* Форсируем шрифты для эмодзи на десктопе */
 .market-card-flag { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: 28px; line-height: 1; display: block; margin-bottom: 4px; }
 .market-card-name { font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 800; color: var(--t1); }
 
@@ -250,8 +273,16 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 .modal-close { background: var(--bg); border: none; border-radius: 7px; width: 30px; height: 30px; font-size: 15px; cursor: pointer; color: var(--t2); display: flex; align-items: center; justify-content: center; transition: 0.13s; flex-shrink: 0; }
 .modal-close:hover { background: var(--border); }
 
+/* Модалка: Переключатель вкладок (Модели/Промпты) */
+.modal-tabs { display: flex; padding: 0 26px; border-bottom: 1px solid var(--border); margin-top: 20px; gap: 20px; flex-shrink: 0; }
+.modal-tab { padding: 10px 0; font-size: 14px; font-weight: 600; color: var(--t3); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: 0.2s; }
+.modal-tab:hover { color: var(--t1); }
+.modal-tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+/* Модалка: Контент */
+.modal-content { display: flex; flex: 1; overflow: hidden; }
+
 /* Редактор промптов */
-.prompt-editor { display: flex; flex: 1; overflow: hidden; margin-top: 18px; }
 .prompt-tabs { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border-xs); padding: 6px; overflow-y: auto; }
 .prompt-tab { display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 11px; border: none; border-radius: 7px; background: transparent; text-align: left; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.12s; margin-bottom: 2px; }
 .prompt-tab:hover { background: var(--bg); }
@@ -270,6 +301,12 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 .modal-footer-status { font-size: 12px; color: var(--t3); margin-right: auto; }
 .modal-footer-status.has-changes { color: var(--orange); font-weight: 600; }
 
+/* Настройки моделей */
+.models-panel { padding: 26px; width: 100%; overflow-y: auto; }
+.model-field { margin-bottom: 24px; }
+.model-select { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 14px; background: var(--bg); outline: none; transition: 0.2s; cursor: pointer; }
+.model-select:focus { border-color: var(--orange); }
+
 /* ── ОВЕРЛЕЙ ── */
 .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 90; backdrop-filter: blur(4px); transition: opacity 0.3s ease; opacity: 0; pointer-events: none; }
 .overlay.show { display: block; opacity: 1; pointer-events: auto; }
@@ -285,7 +322,7 @@ input.inp { min-height: auto; resize: none; padding: 11px 14px; }
 @media (max-width: 960px) {
   .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.09); z-index: 100; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); }
   .sidebar.open { transform: translateX(0); }
-  .overlay { display: block; } /* Оверлей всегда готов, но видим только с классом show */
+  .overlay { display: block; } 
   .hamburger { display: block; }
   .split { grid-template-columns: 1fr; gap: 18px; }
   .split > div:first-child { position: static !important; }
@@ -360,17 +397,23 @@ const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: M
   );
 };
 
-const PromptsModal = ({
-  savedPrompts, onSave, onClose,
+const SettingsModal = ({
+  settings, onSave, onClose,
 }: {
-  savedPrompts: PromptStore;
-  onSave: (p: PromptStore) => void;
+  settings: AppSettings;
+  onSave: (s: AppSettings) => void;
   onClose: () => void;
 }) => {
+  const [view, setView] = useState<"models" | "prompts">("models");
+  
+  // Prompt Editor State
   const [activeTab,       setActiveTab]       = useState<PromptKey>("search");
   const [systemDefaults,  setSystemDefaults]  = useState<PromptStore>({});
-  const [localPrompts,    setLocalPrompts]    = useState<PromptStore>({ ...savedPrompts });
+  const [localPrompts,    setLocalPrompts]    = useState<PromptStore>({ ...settings.prompts });
   const [loadingDefaults, setLoadingDefaults] = useState(false);
+
+  // Models State
+  const [localModels, setLocalModels] = useState({ ...settings.models });
 
   useEffect(() => {
     setLoadingDefaults(true);
@@ -392,60 +435,98 @@ const PromptsModal = ({
       <div className="modal">
         <div className="modal-header">
           <div>
-            <h2 className="modal-title">⚙️ Редактор промптов</h2>
-            <p className="modal-subtitle">Просматривайте и редактируйте инструкции для каждого этапа. Изменения сохраняются в браузере.</p>
+            <h2 className="modal-title">⚙️ Настройки Breason</h2>
+            <p className="modal-subtitle">Конфигурация нейросетей и системных промптов.</p>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="prompt-editor">
-          <div className="prompt-tabs">
-            {PROMPT_TABS.map(tab => (
-              <button key={tab.key} className={`prompt-tab ${activeTab === tab.key ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.key)}>
-                <span className="prompt-tab-icon">{tab.icon}</span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.label}</span>
-                {isModified(tab.key) && <span className="prompt-tab-modified" title="Изменён" />}
-              </button>
-            ))}
-          </div>
+        <div className="modal-tabs">
+          <button className={`modal-tab ${view === 'models' ? 'active' : ''}`} onClick={() => setView('models')}>Нейросети</button>
+          <button className={`modal-tab ${view === 'prompts' ? 'active' : ''}`} onClick={() => setView('prompts')}>Редактор промптов</button>
+        </div>
 
-          <div className="prompt-panel">
-            <div className="prompt-panel-hint">
-              <strong>Переменные:</strong>{" "}{activeTabMeta.hint.replace("Переменные: ", "")}
-            </div>
-            {loadingDefaults ? (
-              <div style={{ textAlign: "center", padding: "40px", color: "var(--t3)" }}>Загружаем промпты...</div>
-            ) : (
-              <textarea
-                className={`prompt-textarea ${isModified(activeTab) ? "modified" : ""}`}
-                value={getCurrentValue(activeTab)}
-                onChange={e => setLocalPrompts(p => ({ ...p, [activeTab]: e.target.value }))}
-                spellCheck={false}
-              />
-            )}
-            {isModified(activeTab) && (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                <button className="btn-ghost" style={{ fontSize: 12, padding: "5px 11px" }}
-                  onClick={() => setLocalPrompts(p => ({ ...p, [activeTab]: systemDefaults[activeTab] || "" }))}>
-                  ↺ По умолчанию
-                </button>
+        <div className="modal-content">
+          {view === 'models' && (
+            <div className="models-panel">
+              <div className="model-field">
+                <p className="field-label">Основная модель (Gemini)</p>
+                <select 
+                  className="model-select" 
+                  value={localModels.primary} 
+                  onChange={e => setLocalModels(p => ({ ...p, primary: e.target.value }))}
+                >
+                  {AVAILABLE_MODELS.primary.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 6 }}>Используется для парсинга и генерации трендов. Минимум Gemini 3.1 Flash Lite.</div>
               </div>
-            )}
-          </div>
+
+              <div className="model-field">
+                <p className="field-label">Резервная модель (Groq Fallback)</p>
+                <select 
+                  className="model-select" 
+                  value={localModels.fallback} 
+                  onChange={e => setLocalModels(p => ({ ...p, fallback: e.target.value }))}
+                >
+                  {AVAILABLE_MODELS.fallback.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 6 }}>Включается при 429 ошибке или недоступности Google API.</div>
+              </div>
+            </div>
+          )}
+
+          {view === 'prompts' && (
+            <div className="prompt-editor" style={{ marginTop: 0 }}>
+              <div className="prompt-tabs">
+                {PROMPT_TABS.map(tab => (
+                  <button key={tab.key} className={`prompt-tab ${activeTab === tab.key ? "active" : ""}`}
+                    onClick={() => setActiveTab(tab.key)}>
+                    <span className="prompt-tab-icon">{tab.icon}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.label}</span>
+                    {isModified(tab.key) && <span className="prompt-tab-modified" title="Изменён" />}
+                  </button>
+                ))}
+              </div>
+
+              <div className="prompt-panel">
+                <div className="prompt-panel-hint">
+                  <strong>Переменные:</strong>{" "}{activeTabMeta.hint.replace("Переменные: ", "")}
+                </div>
+                {loadingDefaults ? (
+                  <div style={{ textAlign: "center", padding: "40px", color: "var(--t3)" }}>Загружаем промпты...</div>
+                ) : (
+                  <textarea
+                    className={`prompt-textarea ${isModified(activeTab) ? "modified" : ""}`}
+                    value={getCurrentValue(activeTab)}
+                    onChange={e => setLocalPrompts(p => ({ ...p, [activeTab]: e.target.value }))}
+                    spellCheck={false}
+                  />
+                )}
+                {isModified(activeTab) && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                    <button className="btn-ghost" style={{ fontSize: 12, padding: "5px 11px" }}
+                      onClick={() => setLocalPrompts(p => ({ ...p, [activeTab]: systemDefaults[activeTab] || "" }))}>
+                      ↺ По умолчанию
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">
           <span className={`modal-footer-status ${hasAnyModified ? "has-changes" : ""}`}>
-            {hasAnyModified ? `${modifiedCount} промпт${modifiedCount > 1 ? "а" : ""} изменен${modifiedCount > 1 ? "о" : ""}` : "Все промпты — по умолчанию"}
+            {view === 'prompts' && hasAnyModified ? `${modifiedCount} промпт(ов) изменено` : ""}
           </span>
-          {hasAnyModified && <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setLocalPrompts({})}>Сбросить всё</button>}
+          {view === 'prompts' && hasAnyModified && <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setLocalPrompts({})}>Сбросить промпты</button>}
           <button className="btn-ghost" onClick={onClose}>Отмена</button>
           <button className="btn-action active" style={{ minWidth: 110 }}
             onClick={() => {
-              const toSave: PromptStore = {};
-              PROMPT_TABS.forEach(t => { if (isModified(t.key)) toSave[t.key] = localPrompts[t.key]; });
-              onSave(toSave); onClose();
+              const toSavePrompts: PromptStore = {};
+              PROMPT_TABS.forEach(t => { if (isModified(t.key)) toSavePrompts[t.key] = localPrompts[t.key]; });
+              onSave({ models: localModels, prompts: toSavePrompts }); 
+              onClose();
             }}>
             Сохранить
           </button>
@@ -460,29 +541,37 @@ export default function BreasonApp() {
   const [market,      setMarket]      = useState<MarketKey>("germany");
   const [inputMode,   setInputMode]   = useState<InputMode>("text");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [promptsOpen, setPromptsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [globalText,    setGlobalText]    = useState("");
   const [selectedTrend, setSelectedTrend] = useState<NewsItem | null>(null);
   const [presetAction,  setPresetAction]  = useState<string>("standard");
   const [keyword,       setKeyword]       = useState("");
 
-  const [savedPrompts, setSavedPrompts] = useState<PromptStore>({});
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  
   useEffect(() => {
-    try { const s = localStorage.getItem(LS_KEY); if (s) setSavedPrompts(JSON.parse(s)); } catch {}
+    try { 
+      const s = localStorage.getItem(LS_KEY); 
+      if (s) {
+        const parsed = JSON.parse(s);
+        setSettings({
+          models: parsed.models || DEFAULT_SETTINGS.models,
+          prompts: parsed.prompts || DEFAULT_SETTINGS.prompts
+        });
+      }
+    } catch {}
   }, []);
 
-  const savePrompts = (p: PromptStore) => {
-    setSavedPrompts(p);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(p)); } catch {}
+  const saveSettings = (newSettings: AppSettings) => {
+    setSettings(newSettings);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(newSettings)); } catch {}
   };
 
-  const hasCustomPrompts = Object.keys(savedPrompts).length > 0;
-
   const buildApiPrompts = () => ({
-    search:   savedPrompts["search"],
-    evaluate: savedPrompts["evaluate"],
-    improve:  savedPrompts[`improve_${presetAction}` as PromptKey],
+    search:   settings.prompts["search"],
+    evaluate: settings.prompts["evaluate"],
+    improve:  settings.prompts[`improve_${presetAction}` as PromptKey],
   });
 
   const [loading,        setLoading]        = useState(false);
@@ -534,7 +623,7 @@ export default function BreasonApp() {
     try {
       const res  = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "search", market, keyword: kw || undefined, customPrompts: buildApiPrompts() }),
+        body: JSON.stringify({ action: "search", market, keyword: kw || undefined, customPrompts: buildApiPrompts(), models: settings.models }),
       });
       const data = await res.json();
       setNewsItems(data.items || []);
@@ -550,7 +639,7 @@ export default function BreasonApp() {
     try {
       const res  = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "evaluate", text: globalText, market, trendContext: selectedTrend, customPrompts: buildApiPrompts() }),
+        body: JSON.stringify({ action: "evaluate", text: globalText, market, trendContext: selectedTrend, customPrompts: buildApiPrompts(), models: settings.models }),
       });
       const data = await res.json();
       if (data.verdict) setEvalResult(data);
@@ -564,7 +653,7 @@ export default function BreasonApp() {
     try {
       const res  = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "improve", text: globalText, market, trendContext: selectedTrend, preset: presetAction, customPrompts: buildApiPrompts() }),
+        body: JSON.stringify({ action: "improve", text: globalText, market, trendContext: selectedTrend, preset: presetAction, customPrompts: buildApiPrompts(), models: settings.models }),
       });
       const data = await res.json();
       if (data.improved_local) setImproveResult(data);
@@ -599,11 +688,10 @@ export default function BreasonApp() {
     <div className="shell">
       <style>{STYLE}</style>
 
-      {/* Оверлей для мобильной версии, клик закрывает меню */}
       <div className={`overlay ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
 
-      {promptsOpen && (
-        <PromptsModal savedPrompts={savedPrompts} onSave={savePrompts} onClose={() => setPromptsOpen(false)} />
+      {settingsOpen && (
+        <SettingsModal settings={settings} onSave={saveSettings} onClose={() => setSettingsOpen(false)} />
       )}
 
       {/* ── Сайдбар ── */}
@@ -619,6 +707,14 @@ export default function BreasonApp() {
             </button>
           ))}
         </nav>
+        
+        {/* Кнопка настроек внизу сайдбара */}
+        <div className="settings-nav-btn">
+          <button className="nav-btn" onClick={() => { setSettingsOpen(true); setSidebarOpen(false); }}>
+            <div className="nav-num" style={{ background: 'transparent', fontSize: 16 }}>⚙️</div>
+            <div className="nav-label">Настройки</div>
+          </button>
+        </div>
       </aside>
 
       {/* ── Основная область ── */}
@@ -631,10 +727,6 @@ export default function BreasonApp() {
             </span>
           </div>
           <div className="topbar-right">
-            <button className="settings-btn" onClick={() => setPromptsOpen(true)}>
-              ⚙️ Промпты
-              {hasCustomPrompts && <span className="settings-dot" title="Есть изменённые промпты" />}
-            </button>
             <MarketPicker market={market} onChange={setMarket} />
           </div>
         </header>
