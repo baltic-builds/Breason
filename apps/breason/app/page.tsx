@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 // ── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -10,993 +10,631 @@ type VerdictType = "PASS" | "SUSPICIOUS" | "FOREIGN";
 type InputMode   = "text" | "url";
 
 interface NewsItem {
-  headline: string; topic: string; category: string;
-  summary: string; business_impact: string;
+  headline:        string;
+  category:        string;
+  summary:         string;
+  business_impact: string;
+  resonance_score: number;
 }
 
-interface ToneMap        { formal_casual: number; bold_cautious: number; technical_benefit: number; abstract_concrete: number; global_native: number; }
-interface Rewrite        { block: string; original: string; suggested: string; suggested_local: string; reason: string; }
-interface EvaluateResult { verdict: VerdictType; verdict_reason: string; genericness_score: number; generic_phrases: string[]; tone_map: ToneMap; missing_trust_signals: string[]; rewrites: Rewrite[]; }
-interface ImproveResult  { improved_text: string; improved_local: string; changes: { what: string; why: string }[]; tone_achieved: string; }
+interface ToneMap {
+  formal_casual:     number;
+  bold_cautious:     number;
+  technical_benefit: number;
+  abstract_concrete: number;
+  global_native:     number;
+}
 
-type PromptKey = "search" | "evaluate" | "improve_icebreaker" | "improve_thought_leader" | "improve_landing_page" | "improve_follow_up" | "improve_social" | "improve_standard";
-type PromptStore = Partial<Record<PromptKey, string>>;
+interface Rewrite {
+  block:           string;
+  original:        string;
+  suggested:       string;
+  suggested_local: string;
+  reason:          string;
+}
 
-interface AppSettings {
-  models: { primary: string; fallback: string; };
-  prompts: PromptStore;
+interface EvaluateResult {
+  verdict:               VerdictType;
+  verdict_reason:        string;
+  genericness_score:     number;
+  generic_phrases:       string[];
+  tone_map:              ToneMap;
+  missing_trust_signals: string[];
+  trend_context:         string;
+  rewrites:              Rewrite[];
+  brief_text:            string;
+}
+
+interface ImproveResult {
+  improved_text:  string;
+  improved_local: string;
+  changes:        { what: string; why: string }[];
+  tone_achieved:  string;
+}
+
+interface UrlStatus {
+  type:       "success" | "error";
+  message:    string;
+  domain?:    string;
+  charCount?: number;
+  truncated?: boolean;
 }
 
 // ── Константы ─────────────────────────────────────────────────────────────────
 
-const MARKETS: Record<MarketKey, { labelRu: string; flag: string }> = {
-  germany: { labelRu: "Германия", flag: "🇩🇪" },
-  poland:  { labelRu: "Польша",   flag: "🇵🇱" },
-  brazil:  { labelRu: "Бразилия", flag: "🇧🇷" },
+const MARKETS: Record<MarketKey, { labelRu: string; flag: string; desc: string }> = {
+  germany: { labelRu: "Германия", flag: "🇩🇪", desc: "Формальный · Точный · Процессный"     },
+  poland:  { labelRu: "Польша",   flag: "🇵🇱", desc: "Прямой · Фактический · Прозрачный"    },
+  brazil:  { labelRu: "Бразилия", flag: "🇧🇷", desc: "Тёплый · Человечный · Доверительный"  },
 };
 
 const STEPS: Record<StepKey, { num: string; label: string }> = {
-  search:   { num: "01", label: "Поиск трендов"  },
-  evaluate: { num: "02", label: "Оценка контента" },
-  improve:  { num: "03", label: "Улучшение"       },
+  search:   { num: "01", label: "Поиск"     },
+  evaluate: { num: "02", label: "Проверка"  },
+  improve:  { num: "03", label: "Улучшение" },
 };
 
 const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: string; icon: string; label: string }> = {
-  PASS:       { color: "#3F6212", bg: "rgba(132,204,22,0.08)",  border: "rgba(132,204,22,0.3)",  icon: "✓", label: "Звучит локально"    },
-  SUSPICIOUS: { color: "#C2410C", bg: "rgba(249,115,22,0.08)",  border: "rgba(249,115,22,0.3)",  icon: "⚠", label: "Звучит как перевод" },
-  FOREIGN:    { color: "#BE123C", bg: "rgba(225,29,72,0.08)",   border: "rgba(225,29,72,0.3)",   icon: "✕", label: "Чужеродный контент" },
+  PASS:       { color: "#3F6212", bg: "rgba(132,204,22,0.08)", border: "rgba(132,204,22,0.3)", icon: "✓", label: "Звучит локально"   },
+  SUSPICIOUS: { color: "#C2410C", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.3)", icon: "⚠", label: "Звучит как импорт" },
+  FOREIGN:    { color: "#BE123C", bg: "rgba(225,29,72,0.08)",  border: "rgba(225,29,72,0.3)",  icon: "✕", label: "Звучит чужеродно"  },
 };
 
+const DEFAULT_COPY = `Unlock efficiency with our all-in-one AI platform. It's a revolutionary game-changer for your enterprise. Start your free trial today and 10x your productivity seamlessly!`;
+
+// Пресеты улучшения — id соответствует ключам IMPROVE_PRESETS в route.ts
 const PRESETS = [
-  { id: "icebreaker",     icon: "🧊", label: "Холодное письмо",  desc: "LinkedIn / первый контакт"  },
-  { id: "thought_leader", icon: "💡", label: "Лидер мнений",     desc: "Экспертный материал"        },
-  { id: "landing_page",   icon: "📄", label: "Лендинг",          desc: "Блок для сайта"             },
-  { id: "follow_up",      icon: "👋", label: "Напоминание",       desc: "Фоллоу-ап после встречи"   },
-  { id: "social",         icon: "📣", label: "Социальные сети",   desc: "Пост для LinkedIn / X"     },
-  { id: "standard",       icon: "🪄", label: "Стандартная правка", desc: "Улучшение по профилю"    },
+  { id: "zero_click",     icon: "🕳️", label: "Zero-Click Пост",      desc: "Удержание в ленте без перехода"    },
+  { id: "anti_ai",        icon: "📱", label: "Anti-AI",               desc: "Живой текст, написанный «на бегу»" },
+  { id: "strong_pov",     icon: "🔥", label: "Провокационное мнение", desc: "Позиция, с которой хочется спорить"},
+  { id: "thread_starter", icon: "🧵", label: "Виральный тред",        desc: "Тред из 5 частей для LinkedIn / X" },
+  { id: "re_engage",      icon: "♻️", label: "Реанимация лидов",      desc: "Пишем лидам «не сейчас»"           },
+  { id: "data_story",     icon: "📊", label: "Data Story",            desc: "Инсайт с данными — 3x репостов"    },
+  { id: "community_drop", icon: "🫂", label: "Community Drop",        desc: "Органичный пост в нишевое комьюнити"},
+] as const;
+
+type PresetId = typeof PRESETS[number]["id"];
+
+// Пул иронических загрузочных сообщений — берётся в random-порядке
+const SEARCH_MSGS_POOL = [
+  "Сканируем деловые СМИ...",
+  "Отбираем ключевые сигналы...",
+  "Формируем дайджест...",
+  "Звоним инсайдерам...",
+  "Ужинаем с депутатами...",
+  "Общаемся с Уорреном Баффетом...",
+  "Идём к гадалке...",
+  "Раскладываем карты Таро...",
+  "Гадаем на кофейной гуще...",
+  "Читаем Bloomberg...",
+  "Подкупаем бухгалтеров...",
 ];
 
-const PROMPT_TABS: { key: PromptKey; label: string; icon: string; hint: string }[] = [
-  { key: "search",                 icon: "🔍", label: "Поиск трендов",   hint: "Переменные: {{MARKET}}, {{TODAY}}, {{NEWS_CONTEXT}}, {{KEYWORD_FOCUS}}" },
-  { key: "evaluate",               icon: "◈",  label: "Оценка контента", hint: "Переменные: {{MARKET}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TEXT}}, {{TREND_CONTEXT}}" },
-  { key: "improve_icebreaker",     icon: "🧊", label: "Холодное письмо", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_thought_leader", icon: "💡", label: "Лидер мнений",    hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_landing_page",   icon: "📄", label: "Лендинг",         hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
-  { key: "improve_follow_up",      icon: "👋", label: "Напоминание",      hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TREND_TENSION}}, {{TEXT}}" },
-  { key: "improve_social",         icon: "📣", label: "Социальные сети", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TREND_NAME}}, {{TEXT}}" },
-  { key: "improve_standard",       icon: "🪄", label: "Стандартная правка", hint: "Переменные: {{MARKET}}, {{LANGUAGE}}, {{TONE}}, {{TRUST}}, {{RED_FLAGS}}, {{TREND_NAME}}, {{TEXT}}" },
-];
+const EVAL_MSGS   = ["Анализирую тон и культуру...", "Проверяю сигналы доверия...", "Ищу клише...", "Генерирую правки..."];
+const IMPROV_MSGS = ["Читаю профиль рынка...", "Переписываю под аудиторию...", "Полирую нативный тон..."];
 
-const AVAILABLE_MODELS = {
-  primary: [
-    { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview (Быстрый)" },
-    { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview (Умный)" },
-    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
-    { id: "gemini-flash-latest", label: "Gemini Flash Latest" }
-  ],
-  fallback: [
-    { id: "llama-3.3-70b", label: "Llama 3.3 70B" },
-    { id: "llama-4-scout", label: "Llama 4 Scout" },
-    { id: "gpt-oss-120b", label: "GPT OSS 120B" },
-    { id: "gpt-oss-20b", label: "GPT OSS 20B" },
-    { id: "qwen-3-32b", label: "Qwen 3 32B" }
-  ]
-};
+function shuffleArray<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
-const LOADING_MSGS: Record<StepKey, string[]> = {
-  search:   [
-    "Смотрим рынок...", 
-    "Опрашиваем экспертов...", 
-    "Читаем Bloomberg...",
-    "Подкупаем бухгалтеров...",
-    "Шантажируем директоров...",
-    "Платим инсайдерам...", 
-    "Смотрим снимки со спутников...",
-    "Звоним Уоррену Баффету...",
-    "Читаем досье ФБР...",
-    "Готовим отчёт..."
-  ],
-  evaluate: ["Синхронизируем культурный код...", "Ищем сигналы доверия...", "Считаем индекс клише...", "Генерируем советы..."],
-  improve:  ["Применяем профиль рынка...", "Вплетаем тренды...", "Переписываем текст...", "Полируем нативный тон..."],
-};
+// ── Хелперы ───────────────────────────────────────────────────────────────────
 
-const FUNNY_QUOTES = [
-  "Работайте на скупого, он платит дважды",
-  "Встречайтесь со стоматологом. Это выгодно",
-  "Не хватает на отпуск? Отдыхайте на работе",
-  "Если хотите удвоить деньги, то сложите их пополам",
-  "Зарабатывайте больше, и доход вырастет",
-  "Раньше я играл в теннис, гольф и бильярд. А теперь у меня есть работа.",
-  "Лучшая работа — это высокооплачиваемое хобби.",
-  "Я люблю работу, она очаровывает меня. Я могу часами сидеть и смотреть, как другие работают.",
-  "Деньги не пахнут, но улетучиваются.",
-  "Если работа — это здоровье, то пусть работают больные.",
-  "Я пришел на работу работать, а не на глупые вопросы отвечать, почему я сплю.",
-  "Главное правило бизнеса: поступай с другими так, как они хотели бы поступить с тобой.",
-  "Не откладывай на завтра то, за что сегодня уже заплатили.",
-  "Начальник не всегда прав, но он всегда начальник.",
-  "Мы делаем вид, что работаем, а они делают вид, что платят.",
-  "Тяжело быть программистом. Приходишь отдохнуть на работу, а там интернет отключили.",
-  "Чем больше я сплю, тем меньше от меня вреда.",
-  "Опыт — это то, что получаешь, не получив того, что хотел.",
-  "Время — деньги. А если нет денег, то и времени полно.",
-  "Хочешь почувствовать себя нужным — возьми кредит.",
-  "Чтобы заработать на жизнь, надо работать. Чтобы разбогатеть, надо придумать что-то другое.",
-  "Если вы считаете, что ваш труд ничего не стоит, попробуйте нанять сантехника.",
-  "Ничто так не снижает производительность труда, как мысль: «А зачем я это делаю?»",
-  "Улыбайтесь! Это заставляет людей ломать голову над тем, что у вас на уме.",
-  "Работа — не волк. В лес не убежит. А жаль...",
-  "Самая тяжелая работа — это притворяться, что ты работаешь.",
-  "Я не бездельничаю, я экономлю энергию.",
-  "В любой непонятной ситуации — иди пить кофе.",
-  "Мой кошелек как луковица: когда я его открываю, я плачу.",
-  "Лучший способ запомнить день рождения жены — один раз забыть."
-];
+function newsScoreClass(s: number) {
+  return s >= 75 ? "high" : s >= 45 ? "mid" : "low";
+}
+function scoreColor(s: number) {
+  return s < 35 ? "#3F6212" : s < 65 ? "#C2410C" : "#BE123C";
+}
 
-const LS_KEY = "breason_settings_v3";
-const DEFAULT_SETTINGS: AppSettings = {
-  models: { primary: "gemini-3.1-flash-lite-preview", fallback: "llama-3.3-70b" },
-  prompts: {}
-};
-
-// ── CSS ───────────────────────────────────────────────────────────────────────
+// ── Стили ─────────────────────────────────────────────────────────────────────
+// (единый блок, все CSS-переменные, компоненты, responsive)
 
 const STYLE = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
-
-:root {
-  --violet:   #7C3AED; --violet-d: #6D28D9; --violet-a: rgba(124,58,237,0.08);
-  --lime:     #84CC16; --lime-a: rgba(132,204,22,0.10); --lime-d: #65A30D; --lime-b: rgba(132,204,22,0.25);
-  --orange:   #F97316; --orange-d: #EA6C0A; --orange-a: rgba(249,115,22,0.08);
-  --red:      #EF4444;
-  --bg:       #F4F6FA;
-  --surface:  #FFFFFF;
-  --t1:       #0F172A; --t2: #4B5675; --t3: #9BA5BC;
-  --border:   rgba(15,23,42,0.08); --border-xs: rgba(15,23,42,0.04);
-  --r:        12px; --r-sm: 8px; --r-lg: 16px;
-  --shadow-sm: 0 1px 4px rgba(15,23,42,0.06);
-  --shadow-md: 0 4px 16px rgba(15,23,42,0.08);
+:root{--violet:#7C3AED;--violet-d:#6D28D9;--violet-a:rgba(124,58,237,0.1);--lime:#84CC16;--lime-a:rgba(132,204,22,0.12);--lime-d:#65A30D;--orange:#F97316;--orange-d:#EA6C0A;--orange-a:rgba(249,115,22,0.1);--red:#EF4444;--sky-a:rgba(14,165,233,0.08);--sky-b:rgba(14,165,233,0.2);--bg:#F1F5F9;--surface:#FFFFFF;--t1:#0F172A;--t2:#475569;--t3:#94A3B8;--border:rgba(15,23,42,0.1);--border-xs:rgba(15,23,42,0.05);--r:14px;--r-sm:10px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--t1);-webkit-font-smoothing:antialiased;line-height:1.5}
+.shell{display:flex;min-height:100vh}
+.sidebar{width:200px;background:var(--surface);border-right:1px solid var(--border);padding:20px 14px;display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;overflow:hidden}
+.logo{display:flex;align-items:center;gap:9px;font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--t1);margin-bottom:28px;flex-shrink:0}
+.logo-mark{width:26px;height:26px;background:var(--lime);border-radius:6px;display:grid;place-items:center;font-size:13px;font-weight:800;color:#1a2e05;flex-shrink:0}
+.sb-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:6px;padding-left:2px}
+.nav-list{display:flex;flex-direction:column;gap:2px}
+.nav-btn{display:flex;align-items:center;gap:9px;padding:9px 10px;border:none;border-radius:9px;background:transparent;cursor:pointer;width:100%;text-align:left;font-family:inherit;transition:background .15s}
+.nav-btn:hover{background:var(--bg)}.nav-btn.active{background:var(--violet-a)}
+.nav-num{width:20px;height:20px;border-radius:5px;background:var(--bg);font-size:9px;font-weight:800;color:var(--t3);display:grid;place-items:center;flex-shrink:0;font-family:'Syne',sans-serif}
+.nav-btn.active .nav-num{background:var(--violet);color:white}
+.nav-label{font-size:12px;font-weight:600;color:var(--t2)}.nav-btn.active .nav-label{color:var(--violet);font-weight:700}
+.sb-footer{margin-top:auto;padding-top:16px;border-top:1px solid var(--border-xs);font-size:10px;color:var(--t3);line-height:1.7}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:20;flex-shrink:0;gap:12px}
+.tab-pills{display:flex;gap:4px;background:var(--bg);padding:3px;border-radius:10px}
+.tab-pill{display:flex;align-items:center;gap:6px;padding:6px 12px;border:none;border-radius:7px;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--t3);cursor:pointer;transition:background .15s,color .15s,box-shadow .15s;white-space:nowrap}
+.tab-pill:hover{color:var(--t2)}.tab-pill.active{background:var(--surface);color:var(--violet);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.tab-pill-num{width:16px;height:16px;border-radius:4px;background:var(--bg);font-size:8px;font-weight:800;display:grid;place-items:center;font-family:'Syne',sans-serif;color:var(--t3);flex-shrink:0}
+.tab-pill.active .tab-pill-num{background:var(--violet);color:white}
+.topbar-market{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--t2);white-space:nowrap}
+.btn-reset{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap;flex-shrink:0}
+.btn-reset:hover{background:var(--bg);color:var(--t2)}
+.page{flex:1;padding:28px 28px 40px;max-width:1100px;width:100%;margin:0 auto}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.field-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--t3);margin-bottom:10px}
+.market-selector{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.market-card{padding:16px;border:2px solid var(--border-xs);border-radius:var(--r);background:var(--surface);cursor:pointer;text-align:center;transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;font-family:inherit}
+.market-card:hover{border-color:var(--border);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.06)}
+.market-card.active{border-color:var(--lime);background:var(--lime-a);box-shadow:0 4px 16px rgba(132,204,22,.15)}
+.market-card-flag{font-size:32px;margin-bottom:8px;display:block}
+.market-card-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--t1);margin-bottom:4px}
+.market-card-desc{font-size:11px;color:var(--t3);line-height:1.4}
+.btn-search{width:100%;padding:15px;background:var(--orange);color:#fff;border:none;border-radius:var(--r-sm);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:background .15s,transform .15s,box-shadow .15s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-search:hover:not(:disabled){background:var(--orange-d);transform:translateY(-2px);box-shadow:0 6px 20px rgba(249,115,22,.3)}
+.btn-search:disabled{background:var(--t3);cursor:not-allowed;transform:none;box-shadow:none}
+.btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px 20px;background:var(--violet);color:#fff;border:none;border-radius:var(--r-sm);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s,transform .15s,box-shadow .15s;margin-top:14px}
+.btn-primary:hover:not(:disabled){background:var(--violet-d);transform:translateY(-1px);box-shadow:0 6px 20px rgba(124,58,237,.25)}
+.btn-primary:disabled{background:var(--t3);cursor:not-allowed;transform:none;box-shadow:none}
+.btn-ghost{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:transparent;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;transition:background .15s;white-space:nowrap}
+.btn-ghost:hover{background:var(--bg)}.btn-ghost:disabled{opacity:.5;cursor:not-allowed}
+.news-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:28px}
+.news-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;cursor:default;transition:transform .18s,box-shadow .18s,border-color .18s;display:flex;flex-direction:column;gap:10px}
+.news-card:hover{transform:translateY(-4px) scale(1.01);box-shadow:0 8px 28px rgba(124,58,237,.1);border-color:rgba(124,58,237,.2)}
+.news-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.news-category{display:inline-block;padding:3px 9px;background:var(--violet-a);color:var(--violet);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;border-radius:5px;white-space:nowrap;flex-shrink:0}
+.news-score{font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap;flex-shrink:0}
+.news-score.high{background:rgba(132,204,22,.15);color:#3F6212}
+.news-score.mid{background:rgba(249,115,22,.12);color:#C2410C}
+.news-score.low{background:rgba(148,163,184,.15);color:var(--t2)}
+.news-headline{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--t1);line-height:1.35}
+.news-summary{font-size:12px;color:var(--t2);line-height:1.6;flex:1}
+.news-impact{font-size:12px;color:var(--t2);background:var(--bg);border-radius:8px;padding:9px 12px;border-left:3px solid var(--orange);line-height:1.5}
+.news-impact-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--orange);margin-bottom:3px}
+.news-card-use{margin-top:auto;padding:7px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;transition:.15s;text-align:left}
+.news-card-use:hover{background:var(--violet-a);border-color:rgba(124,58,237,.25);color:var(--violet)}
+.split{display:grid;gap:24px;grid-template-columns:340px 1fr;align-items:start}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;align-items:center;gap:12px}
+textarea.inp{width:100%;padding:13px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);font-family:inherit;font-size:13px;line-height:1.65;color:var(--t1);resize:vertical;outline:none;transition:border-color .15s,box-shadow .15s;min-height:130px}
+textarea.inp:focus{border-color:var(--violet);background:var(--surface);box-shadow:0 0 0 3px var(--violet-a)}
+.loader{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;gap:14px;color:var(--t2)}
+.spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--violet);border-radius:50%;animation:spin .75s linear infinite}
+.spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:white;border-radius:50%;animation:spin .75s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loader-label{font-size:14px;font-weight:600}.loader-msg{font-size:12px;color:var(--t3)}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;text-align:center;color:var(--t3);gap:10px}
+.empty-icon{font-size:32px;opacity:.3}.empty-title{font-size:14px;font-weight:600;color:var(--t2)}.empty-text{font-size:12px;max-width:240px;line-height:1.6}
+.error-box{padding:13px 16px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm);color:#B91C1C;font-size:13px;font-weight:500}
+.mode-tabs{display:flex;gap:4px;background:var(--bg);padding:4px;border-radius:var(--r-sm);margin-bottom:14px}
+.mode-tab{flex:1;padding:7px;border:none;border-radius:7px;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--t3);cursor:pointer;transition:.15s}
+.mode-tab.active{background:var(--surface);color:var(--t1);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.url-wrap{position:relative}
+.url-inp{width:100%;padding:11px 14px 11px 36px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);font-family:inherit;font-size:13px;color:var(--t1);outline:none;transition:border-color .15s,box-shadow .15s}
+.url-inp:focus{border-color:var(--violet);background:var(--surface);box-shadow:0 0 0 3px var(--violet-a)}
+.url-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;pointer-events:none}
+.url-status{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:500;margin-top:8px}
+.url-status.success{background:rgba(132,204,22,.1);color:#3F6212}.url-status.error{background:rgba(239,68,68,.07);color:#B91C1C}
+.url-meta{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg);border-radius:8px;margin-top:6px}
+.url-meta-domain{font-size:12px;font-weight:600;color:var(--t2)}.url-meta-chars{font-size:11px;color:var(--t3)}
+.url-hint{font-size:11px;color:var(--t3);margin-top:8px;line-height:1.5}
+.preview-box{margin-top:12px;padding:10px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--t2);line-height:1.5;max-height:90px;overflow:hidden;position:relative}
+.preview-fade{position:absolute;bottom:0;left:0;right:0;height:32px;background:linear-gradient(transparent,var(--bg))}
+.verdict-banner{display:flex;align-items:center;gap:14px;padding:15px 18px;border-radius:var(--r);border:1.5px solid;margin-bottom:14px}
+.verdict-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;font-size:16px;font-weight:800;background:rgba(255,255,255,.6);flex-shrink:0}
+.verdict-label{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;margin-bottom:2px}
+.verdict-reason{font-size:13px;font-weight:500;opacity:.8}
+.tone-row{margin-bottom:12px}.tone-row:last-child{margin-bottom:0}
+.tone-labels{display:flex;justify-content:space-between;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--t2);margin-bottom:5px}
+.tone-track{position:relative;height:5px;background:var(--bg);border-radius:99px}
+.tone-mid{position:absolute;left:50%;top:-3px;bottom:-3px;width:1.5px;background:var(--border)}
+.tone-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--violet);border:2px solid white;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(124,58,237,.35);transition:left .5s cubic-bezier(.34,1.56,.64,1)}
+.score-big{font-family:'Syne',sans-serif;font-size:34px;font-weight:800;line-height:1;margin-bottom:2px}
+.score-sub{font-size:11px;color:var(--t3);margin-bottom:10px}
+.badge-row{display:flex;flex-wrap:wrap;gap:6px}
+.badge{padding:3px 9px;background:#FEE2E2;color:#B91C1C;font-size:11px;font-weight:600;border-radius:5px}
+.trust-list{display:flex;flex-direction:column;gap:6px}
+.trust-item{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--t2);border-left:3px solid var(--red);line-height:1.4}
+.ctx-box{display:flex;gap:10px;padding:12px 14px;background:var(--sky-a);border:1px solid var(--sky-b);border-radius:var(--r-sm);font-size:13px;color:var(--t2);line-height:1.55}
+.ctx-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.rw-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:15px}
+.rw-tag{display:inline-block;padding:3px 8px;background:var(--violet-a);color:var(--violet);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;border-radius:5px;margin-bottom:12px}
+.rw-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.rw-col-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--t3);margin-bottom:5px}
+.rw-block{padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.55;border:1px solid var(--border);background:var(--surface);color:var(--t2)}
+.rw-block.local{background:var(--violet-a);border-color:rgba(124,58,237,.2);color:var(--violet);font-weight:500}
+.rw-reason{font-size:12px;color:var(--t3);font-style:italic;padding-top:10px;border-top:1px solid var(--border-xs)}
+.preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.preset-btn{padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);text-align:left;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s,transform .12s}
+.preset-btn:hover{border-color:var(--violet);background:var(--violet-a);transform:translateY(-1px)}
+.preset-btn.active{border-color:var(--violet);background:var(--violet-a)}
+.preset-btn-icon{font-size:16px;margin-bottom:5px}
+.preset-btn-label{font-size:12px;font-weight:700;color:var(--t1);margin-bottom:2px}
+.preset-btn-desc{font-size:10px;color:var(--t3);line-height:1.35}
+.improve-result{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.improve-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.improve-tab{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;transition:.15s}
+.improve-tab.active{background:var(--violet);border-color:var(--violet);color:white}
+.improve-body{font-size:14px;line-height:1.75;color:var(--t1);white-space:pre-wrap;padding:16px;background:var(--bg);border-radius:10px}
+.change-list{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.change-item{padding:11px 14px;border-radius:8px;background:var(--bg);border-left:3px solid var(--violet)}
+.change-what{font-size:13px;font-weight:600;color:var(--t1);margin-bottom:3px}
+.change-why{font-size:12px;color:var(--t2)}
+.tone-tag{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(132,204,22,.1);border:1px solid rgba(132,204,22,.25);border-radius:8px;font-size:12px;font-weight:600;color:#3F6212;margin-bottom:14px}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--t1);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:500;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.18);animation:fadeUp .25s ease-out}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:768px){
+  .sidebar{display:none}
+  .topbar{padding:0 16px;height:48px;overflow-x:auto}
+  .tab-pill{padding:5px 10px;font-size:11px}.tab-pill-num{display:none}
+  .page{padding:16px 16px 32px}
+  .market-selector{grid-template-columns:1fr;gap:8px}
+  .market-card{display:flex;align-items:center;gap:14px;text-align:left;padding:14px}
+  .market-card-flag{font-size:28px;margin-bottom:0;flex-shrink:0}
+  .news-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}
+  .split{grid-template-columns:1fr;gap:16px}
+  .grid2{grid-template-columns:1fr}
+  .rw-cols{grid-template-columns:1fr}
+  .topbar-market{display:none}
+  .preset-grid{grid-template-columns:1fr}
 }
-
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--t1); line-height: 1.5; -webkit-font-smoothing: antialiased; }
-
-/* ── ОБОЛОЧКА ── */
-.shell { display: flex; min-height: 100vh; overflow-x: hidden; }
-
-/* ── САЙДБАР ── */
-.sidebar {
-  width: 228px; flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 20px 12px;
-  display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh;
-  z-index: 100;
-  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
-}
-.logo {
-  display: flex; align-items: center; gap: 9px;
-  font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 800;
-  color: var(--t1); margin-bottom: 24px; cursor: pointer;
-  background: none; border: none; padding: 4px 6px;
-  border-radius: 8px; transition: 0.15s;
-}
-.logo:hover { background: var(--bg); }
-.logo-mark { width: 26px; height: 26px; background: var(--lime); border-radius: 6px; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: #1a2e05; flex-shrink: 0; }
-
-.nav-btn { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: none; border-radius: 9px; background: transparent; cursor: pointer; width: 100%; text-align: left; font-family: inherit; transition: 0.12s; margin-bottom: 3px; }
-.nav-btn:hover { background: var(--bg); }
-.nav-btn.active { background: var(--violet-a); }
-.nav-num { width: 22px; height: 22px; border-radius: 5px; background: var(--bg); font-size: 9px; font-weight: 800; color: var(--t3); display: grid; place-items: center; font-family: 'Syne', sans-serif; flex-shrink: 0; }
-.nav-btn.active .nav-num { background: var(--violet); color: white; }
-.nav-label { font-size: 12.5px; font-weight: 600; color: var(--t2); }
-.nav-btn.active .nav-label { color: var(--violet); font-weight: 700; }
-
-.settings-nav-btn { margin-top: auto; border-top: 1px solid var(--border-xs); padding-top: 14px; }
-.settings-nav-btn .nav-btn { color: var(--t2); justify-content: flex-start; padding: 12px 10px; }
-.settings-nav-btn .nav-btn:hover { color: var(--t1); background: var(--bg); }
-
-/* ── ОСНОВНАЯ ОБЛАСТЬ ── */
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-
-/* ── ТОПБАР ── */
-.topbar {
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  height: 56px; display: flex; align-items: center;
-  padding: 0 24px; position: sticky; top: 0; z-index: 40;
-  justify-content: space-between; gap: 16px;
-}
-.topbar-left  { display: flex; align-items: center; gap: 10px; }
-.topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.hamburger    { display: none; background: transparent; border: none; font-size: 22px; cursor: pointer; padding: 4px; color: var(--t2); border-radius: 6px; }
-.hamburger:hover { background: var(--bg); }
-.topbar-title { font-size: 13px; font-weight: 600; color: var(--t2); white-space: nowrap; }
-.topbar-sep   { color: var(--border); margin: 0 2px; }
-
-/* ── КНОПКА РЫНКА (топбар) ── */
-.market-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--t1); transition: 0.13s; box-shadow: var(--shadow-sm); }
-.market-btn:hover { background: var(--bg); box-shadow: var(--shadow-md); }
-
-/* ── ВЫПАДАЮЩИЙ СПИСОК РЫНКОВ ── */
-.market-dropdown-wrap { position: relative; }
-.market-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 6px; box-shadow: 0 12px 40px rgba(0,0,0,0.1); min-width: 210px; z-index: 200; animation: dropIn 0.14s ease-out; }
-@keyframes dropIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-.market-option { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 8px; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; transition: 0.1s; }
-.market-option:hover { background: var(--bg); }
-.market-option.active { background: var(--lime-a); }
-
-/* ── ВЫБОР РЫНКА (страница поиска) ── */
-.market-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
-.market-card {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 7px; padding: 16px 12px;
-  border: 1.5px solid var(--border-xs);
-  border-radius: var(--r-lg);
-  background: var(--surface); cursor: pointer;
-  text-align: center; transition: 0.15s; font-family: inherit;
-  box-shadow: var(--shadow-sm);
-}
-.market-card:hover { border-color: rgba(132,204,22,0.4); transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.market-card.active {
-  border-color: var(--lime); background: var(--lime-a);
-  box-shadow: 0 0 0 3px var(--lime-b), var(--shadow-md);
-  transform: translateY(-2px);
-}
-.market-card-flag { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: 28px; line-height: 1; display: block; margin-bottom: 4px; }
-.market-card-name { font-family: 'Syne', sans-serif; font-size: 13.5px; font-weight: 800; color: var(--t1); }
-
-/* ── КНОПКИ ── */
-.btn-primary {
-  width: 100%; padding: 13px; background: var(--orange); color: #fff;
-  border: none; border-radius: var(--r-sm); font-size: 14.5px; font-weight: 700;
-  cursor: pointer; transition: 0.15s; display: flex; justify-content: center;
-  align-items: center; gap: 8px; font-family: inherit; letter-spacing: 0.01em;
-}
-.btn-primary:hover:not(:disabled) { background: var(--orange-d); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(249,115,22,0.28); }
-.btn-primary:disabled { background: var(--t3); cursor: not-allowed; transform: none; box-shadow: none; }
-
-.btn-action { padding: 9px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 13px; font-weight: 600; color: var(--t1); cursor: pointer; transition: 0.13s; font-family: inherit; }
-.btn-action:hover { background: var(--bg); border-color: var(--orange); color: var(--orange); }
-.btn-action.active { background: var(--orange); color: #fff; border-color: var(--orange); }
-
-.btn-ghost { padding: 7px 14px; background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm); font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--t2); cursor: pointer; transition: 0.13s; }
-.btn-ghost:hover { background: var(--bg); }
-
-.btn-use-trend { width: 100%; padding: 10px; margin-top: auto; background: var(--t1); color: #fff; border: none; border-radius: var(--r-sm); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: 0.15s; font-family: inherit; }
-.btn-use-trend:hover { background: var(--violet); transform: translateY(-1px); }
-
-.btn-sticky { background: var(--orange); color: #fff; padding: 13px 28px; border-radius: 99px; font-weight: 700; font-size: 14px; border: none; cursor: pointer; box-shadow: 0 6px 20px rgba(249,115,22,0.3); transition: 0.2s; font-family: inherit; }
-.btn-sticky:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(249,115,22,0.38); }
-
-/* ── ПОЛЯ И КАРТОЧКИ ── */
-.page { flex: 1; padding: 28px 28px 48px; max-width: 1200px; width: 100%; margin: 0 auto; box-sizing: border-box; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: var(--shadow-sm); }
-.field-label { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 11px; }
-
-.inp { width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: inherit; font-size: 14px; line-height: 1.6; color: var(--t1); resize: vertical; outline: none; transition: 0.13s; min-height: 80px; box-sizing: border-box; }
-.inp:focus { border-color: var(--orange); background: var(--surface); box-shadow: 0 0 0 3px var(--orange-a); }
-input.inp { min-height: auto; resize: none; padding: 11px 14px; }
-
-/* ── РАСКЛАДКИ ── */
-.split { display: grid; gap: 24px; grid-template-columns: 400px 1fr; align-items: start; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.stack { display: flex; flex-direction: column; gap: 18px; }
-
-/* ── ТЕМАТИЧЕСКИЕ ГРУППЫ ── */
-.topic-section { margin-bottom: 28px; }
-.topic-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.topic-label { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--t3); white-space: nowrap; }
-.topic-line { flex: 1; height: 1px; background: var(--border-xs); }
-.topic-count { font-size: 10px; font-weight: 700; color: var(--t3); background: var(--bg); padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
-.news-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.news-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; display: flex; flex-direction: column; gap: 10px; transition: 0.18s; box-shadow: var(--shadow-sm); }
-.news-card:hover { border-color: rgba(249,115,22,0.25); box-shadow: 0 6px 20px rgba(249,115,22,0.07); transform: translateY(-2px); }
-.news-headline { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--t1); line-height: 1.35; }
-
-/* ── ПРЕСЕТЫ ── */
-.preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-.preset-card { padding: 14px; border: 1.5px solid var(--border); border-radius: var(--r-lg); background: var(--surface); text-align: left; cursor: pointer; transition: 0.15s; font-family: inherit; box-shadow: var(--shadow-sm); }
-.preset-card:hover { border-color: rgba(249,115,22,0.35); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.preset-card.active { background: var(--orange-a); border-color: var(--orange); box-shadow: 0 0 0 2px rgba(249,115,22,0.15); }
-
-/* ── МОДАЛЬНОЕ ОКНО ── */
-.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(4px); }
-.modal { background: var(--surface); border-radius: var(--r-lg); width: 100%; max-width: 900px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,0.18); border: 1px solid var(--border); }
-.modal-header { padding: 22px 26px 0; display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
-.modal-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--t1); }
-.modal-subtitle { font-size: 12.5px; color: var(--t3); margin-top: 4px; line-height: 1.5; }
-.modal-close { background: var(--bg); border: none; border-radius: 7px; width: 30px; height: 30px; font-size: 15px; cursor: pointer; color: var(--t2); display: flex; align-items: center; justify-content: center; transition: 0.13s; flex-shrink: 0; }
-.modal-close:hover { background: var(--border); }
-
-/* Модалка: Переключатель вкладок (Модели/Промпты) */
-.modal-tabs { display: flex; padding: 0 26px; border-bottom: 1px solid var(--border); margin-top: 20px; gap: 20px; flex-shrink: 0; }
-.modal-tab { padding: 10px 0; font-size: 14px; font-weight: 600; color: var(--t3); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: 0.2s; }
-.modal-tab:hover { color: var(--t1); }
-.modal-tab.active { color: var(--orange); border-bottom-color: var(--orange); }
-
-/* Модалка: Контент */
-.modal-content { display: flex; flex: 1; overflow: hidden; }
-
-/* Редактор промптов */
-.prompt-tabs { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border-xs); padding: 6px; overflow-y: auto; }
-.prompt-tab { display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 11px; border: none; border-radius: 7px; background: transparent; text-align: left; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--t2); cursor: pointer; transition: 0.12s; margin-bottom: 2px; }
-.prompt-tab:hover { background: var(--bg); }
-.prompt-tab.active { background: var(--violet-a); color: var(--violet); }
-.prompt-tab-icon { font-size: 13px; flex-shrink: 0; }
-.prompt-tab-modified { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); margin-left: auto; flex-shrink: 0; }
-
-.prompt-panel { flex: 1; display: flex; flex-direction: column; padding: 18px 22px; overflow: hidden; }
-.prompt-panel-hint { font-size: 11.5px; color: var(--t3); background: var(--bg); border-radius: 7px; padding: 9px 13px; margin-bottom: 12px; line-height: 1.6; border-left: 3px solid var(--violet-a); flex-shrink: 0; }
-.prompt-panel-hint strong { color: var(--violet); }
-.prompt-textarea { flex: 1; width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); font-family: 'Fira Code', 'Courier New', monospace; font-size: 12px; line-height: 1.7; color: var(--t1); resize: none; outline: none; transition: 0.13s; min-height: 280px; box-sizing: border-box; }
-.prompt-textarea:focus { border-color: var(--violet); background: var(--surface); box-shadow: 0 0 0 3px var(--violet-a); }
-.prompt-textarea.modified { border-color: var(--orange); }
-
-.modal-footer { padding: 14px 22px; border-top: 1px solid var(--border-xs); display: flex; align-items: center; gap: 10px; flex-shrink: 0; background: var(--surface); }
-.modal-footer-status { font-size: 12px; color: var(--t3); margin-right: auto; }
-.modal-footer-status.has-changes { color: var(--orange); font-weight: 600; }
-
-/* Настройки моделей */
-.models-panel { padding: 26px; width: 100%; overflow-y: auto; }
-.model-field { margin-bottom: 24px; }
-.model-select { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 14px; background: var(--bg); outline: none; transition: 0.2s; cursor: pointer; }
-.model-select:focus { border-color: var(--orange); }
-
-/* ── ОВЕРЛЕЙ ── */
-.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 90; backdrop-filter: blur(4px); transition: opacity 0.3s ease; opacity: 0; pointer-events: none; }
-.overlay.show { display: block; opacity: 1; pointer-events: auto; }
-
-/* ── ЛОАДЕР ── */
-.stream-loader { font-family: monospace; font-size: 13.5px; color: var(--orange-d); background: var(--orange-a); padding: 18px; border-radius: 10px; display: flex; flex-direction: column; gap: 9px; border: 1px solid rgba(249,115,22,0.12); }
-.stream-line { display: flex; align-items: center; gap: 8px; }
-.blink { animation: blink 1s infinite; }
-@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-.sticky-footer { position: sticky; bottom: 0; padding: 18px 0; background: linear-gradient(transparent, var(--bg) 35%); margin-top: 20px; display: flex; justify-content: flex-end; z-index: 10; }
-
-/* ── МОБИЛЬНАЯ ВЕРСИЯ ── */
-@media (max-width: 960px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.09); z-index: 100; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); }
-  .sidebar.open { transform: translateX(0); }
-  .overlay { display: block; } 
-  .hamburger { display: block; }
-  .split { grid-template-columns: 1fr; gap: 18px; }
-  .split > div:first-child { position: static !important; }
-  .news-grid { grid-template-columns: 1fr 1fr; }
-  .topbar { padding: 0 16px; }
-  .page { padding: 16px 16px 40px; }
-  .market-selector { grid-template-columns: 1fr; gap: 8px; }
-  .market-card { flex-direction: row; text-align: left; gap: 12px; padding: 14px; }
-  .market-card-flag { font-size: 24px; margin-bottom: 0; }
-  .prompt-editor { flex-direction: column; }
-  .prompt-tabs { width: 100%; border-right: none; border-bottom: 1px solid var(--border-xs); display: flex; flex-wrap: wrap; padding: 6px; gap: 4px; overflow-y: visible; }
-  .modal { max-height: 96vh; }
-  .preset-grid { grid-template-columns: 1fr; }
-  .grid2 { grid-template-columns: 1fr; }
-}
-@media (max-width: 580px) {
-  .news-grid { grid-template-columns: 1fr; }
-  .topbar-sep { display: none; }
-}
+@media(max-width:480px){.tab-pills{gap:2px;padding:2px}.tab-pill{padding:5px 8px;font-size:10px}}
 `;
 
-// ── Компоненты ────────────────────────────────────────────────────────────────
-
-const ProgressStream = ({ steps, activeIdx, quoteIdx }: { steps: string[]; activeIdx: number; quoteIdx: number }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    <div className="stream-loader">
-      {steps.map((s, i) => {
-        if (i > activeIdx) return null;
-        return (
-          <div key={i} className="stream-line" style={{ opacity: i === activeIdx ? 1 : 0.45 }}>
-            <span>{i === activeIdx ? <span className="blink">▶</span> : "✓"}</span>
-            <span>{s}</span>
-          </div>
-        );
-      })}
-    </div>
-    <div style={{ textAlign: "center", fontStyle: "italic", fontSize: 13, color: "var(--t3)" }}>
-      💡 {FUNNY_QUOTES[quoteIdx]}
-    </div>
-  </div>
-);
-
-const MarketPicker = ({ market, onChange }: { market: MarketKey; onChange: (m: MarketKey) => void }) => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-  const m = MARKETS[market];
-  return (
-    <div className="market-dropdown-wrap" ref={ref}>
-      <button className="market-btn" onClick={() => setOpen(o => !o)}>
-        <span style={{ fontSize: 15, fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", sans-serif' }}>{m.flag}</span>
-        <span>{m.labelRu}</span>
-        <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <div className="market-dropdown">
-          {(Object.entries(MARKETS) as [MarketKey, typeof MARKETS[MarketKey]][]).map(([key, data]) => (
-            <button key={key} className={`market-option ${key === market ? "active" : ""}`}
-              onClick={() => { onChange(key); setOpen(false); }}>
-              <span style={{ fontSize: 19, fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", sans-serif' }}>{data.flag}</span>
-              <span style={{ fontSize: 13.5, fontWeight: 700 }}>{data.labelRu}</span>
-              {key === market && <span style={{ marginLeft: "auto", color: "var(--lime-d)", fontWeight: 800, fontSize: 13 }}>✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const SettingsModal = ({
-  settings, onSave, onClose,
-}: {
-  settings: AppSettings;
-  onSave: (s: AppSettings) => void;
-  onClose: () => void;
-}) => {
-  const [view, setView] = useState<"models" | "prompts">("models");
-  
-  // Prompt Editor State
-  const [activeTab,       setActiveTab]       = useState<PromptKey>("search");
-  const [systemDefaults,  setSystemDefaults]  = useState<PromptStore>({});
-  const [localPrompts,    setLocalPrompts]    = useState<PromptStore>({ ...settings.prompts });
-  const [loadingDefaults, setLoadingDefaults] = useState(false);
-
-  // Models State
-  const [localModels, setLocalModels] = useState({ ...settings.models });
-
-  useEffect(() => {
-    setLoadingDefaults(true);
-    fetch("/api/resonance-trends?action=prompts")
-      .then(r => r.json())
-      .then(data => { if (data.prompts) setSystemDefaults(data.prompts); })
-      .catch(() => {})
-      .finally(() => setLoadingDefaults(false));
-  }, []);
-
-  const activeTabMeta   = PROMPT_TABS.find(t => t.key === activeTab)!;
-  const getCurrentValue = (key: PromptKey) => localPrompts[key] !== undefined ? localPrompts[key]! : (systemDefaults[key] || "");
-  const isModified      = (key: PromptKey) => localPrompts[key] !== undefined && localPrompts[key] !== systemDefaults[key];
-  const hasAnyModified  = PROMPT_TABS.some(t => isModified(t.key));
-  const modifiedCount   = PROMPT_TABS.filter(t => isModified(t.key)).length;
-
-  return (
-    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <div>
-            <h2 className="modal-title">⚙️ Настройки Breason</h2>
-            <p className="modal-subtitle">Конфигурация нейросетей и системных промптов.</p>
-          </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-
-        <div className="modal-tabs">
-          <button className={`modal-tab ${view === 'models' ? 'active' : ''}`} onClick={() => setView('models')}>Нейросети</button>
-          <button className={`modal-tab ${view === 'prompts' ? 'active' : ''}`} onClick={() => setView('prompts')}>Редактор промптов</button>
-        </div>
-
-        <div className="modal-content">
-          {view === 'models' && (
-            <div className="models-panel">
-              <div className="model-field">
-                <p className="field-label">Основная модель (Gemini)</p>
-                <select 
-                  className="model-select" 
-                  value={localModels.primary} 
-                  onChange={e => setLocalModels(p => ({ ...p, primary: e.target.value }))}
-                >
-                  {AVAILABLE_MODELS.primary.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select>
-                <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 6 }}>Используется для парсинга и генерации трендов. Минимум Gemini 3.1 Flash Lite.</div>
-              </div>
-
-              <div className="model-field">
-                <p className="field-label">Резервная модель (Groq Fallback)</p>
-                <select 
-                  className="model-select" 
-                  value={localModels.fallback} 
-                  onChange={e => setLocalModels(p => ({ ...p, fallback: e.target.value }))}
-                >
-                  {AVAILABLE_MODELS.fallback.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select>
-                <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 6 }}>Включается при 429 ошибке или недоступности Google API.</div>
-              </div>
-            </div>
-          )}
-
-          {view === 'prompts' && (
-            <div className="prompt-editor" style={{ marginTop: 0 }}>
-              <div className="prompt-tabs">
-                {PROMPT_TABS.map(tab => (
-                  <button key={tab.key} className={`prompt-tab ${activeTab === tab.key ? "active" : ""}`}
-                    onClick={() => setActiveTab(tab.key)}>
-                    <span className="prompt-tab-icon">{tab.icon}</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.label}</span>
-                    {isModified(tab.key) && <span className="prompt-tab-modified" title="Изменён" />}
-                  </button>
-                ))}
-              </div>
-
-              <div className="prompt-panel">
-                <div className="prompt-panel-hint">
-                  <strong>Переменные:</strong>{" "}{activeTabMeta.hint.replace("Переменные: ", "")}
-                </div>
-                {loadingDefaults ? (
-                  <div style={{ textAlign: "center", padding: "40px", color: "var(--t3)" }}>Загружаем промпты...</div>
-                ) : (
-                  <textarea
-                    className={`prompt-textarea ${isModified(activeTab) ? "modified" : ""}`}
-                    value={getCurrentValue(activeTab)}
-                    onChange={e => setLocalPrompts(p => ({ ...p, [activeTab]: e.target.value }))}
-                    spellCheck={false}
-                  />
-                )}
-                {isModified(activeTab) && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                    <button className="btn-ghost" style={{ fontSize: 12, padding: "5px 11px" }}
-                      onClick={() => setLocalPrompts(p => ({ ...p, [activeTab]: systemDefaults[activeTab] || "" }))}>
-                      ↺ По умолчанию
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <span className={`modal-footer-status ${hasAnyModified ? "has-changes" : ""}`}>
-            {view === 'prompts' && hasAnyModified ? `${modifiedCount} промпт(ов) изменено` : ""}
-          </span>
-          {view === 'prompts' && hasAnyModified && <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setLocalPrompts({})}>Сбросить промпты</button>}
-          <button className="btn-ghost" onClick={onClose}>Отмена</button>
-          <button className="btn-action active" style={{ minWidth: 110 }}
-            onClick={() => {
-              const toSavePrompts: PromptStore = {};
-              PROMPT_TABS.forEach(t => { if (isModified(t.key)) toSavePrompts[t.key] = localPrompts[t.key]; });
-              onSave({ models: localModels, prompts: toSavePrompts }); 
-              onClose();
-            }}>
-            Сохранить
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+// ── Компонент ─────────────────────────────────────────────────────────────────
 
 export default function BreasonApp() {
-  const [step,        setStep]        = useState<StepKey>("search");
-  const [market,      setMarket]      = useState<MarketKey>("germany");
-  const [inputMode,   setInputMode]   = useState<InputMode>("text");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [step,   setStep]   = useState<StepKey>("search");
+  const [market, setMarket] = useState<MarketKey>("germany");
 
-  const [globalText,    setGlobalText]    = useState("");
-  const [selectedTrend, setSelectedTrend] = useState<NewsItem | null>(null);
-  const [presetAction,  setPresetAction]  = useState<string>("standard");
-  const [keyword,       setKeyword]       = useState("");
-
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  
-  useEffect(() => {
-    try { 
-      const s = localStorage.getItem(LS_KEY); 
-      if (s) {
-        const parsed = JSON.parse(s);
-        setSettings({
-          models: parsed.models || DEFAULT_SETTINGS.models,
-          prompts: parsed.prompts || DEFAULT_SETTINGS.prompts
-        });
-      }
-    } catch {}
-  }, []);
-
-  const saveSettings = (newSettings: AppSettings) => {
-    setSettings(newSettings);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(newSettings)); } catch {}
-  };
-
-  const buildApiPrompts = () => ({
-    search:   settings.prompts["search"],
-    evaluate: settings.prompts["evaluate"],
-    improve:  settings.prompts[`improve_${presetAction}` as PromptKey],
-  });
-
-  const [loading,        setLoading]        = useState(false);
-  const [loadingStepIdx, setLoadingStepIdx] = useState(0);
-  const [quoteIdx,       setQuoteIdx]       = useState(0);
-  const [error,          setError]          = useState<string | null>(null);
+  const [loading,    setLoading]    = useState(false);
+  const [loadMsg,    setLoadMsg]    = useState(0);
+  const [loadMsgs,   setLoadMsgs]   = useState<string[]>([]);
+  const [error,      setError]      = useState<string | null>(null);
+  const [toast,      setToast]      = useState<string | null>(null);
 
   const [newsItems,     setNewsItems]     = useState<NewsItem[] | null>(null);
-  const [keywordFocus,  setKeywordFocus]  = useState("");
   const [evalResult,    setEvalResult]    = useState<EvaluateResult | null>(null);
   const [improveResult, setImproveResult] = useState<ImproveResult | null>(null);
-  const [urlInput,      setUrlInput]      = useState("");
 
+  const [activePreset,  setActivePreset]  = useState<PresetId>("zero_click");
+  const [selectedTrend, setSelectedTrend] = useState<NewsItem | null>(null);
+
+  const [evalText,    setEvalText]    = useState(DEFAULT_COPY);
+  const [improveText, setImproveText] = useState("");
+  const [improveCtx,  setImproveCtx]  = useState("");
+  const [improveTab,  setImproveTab]  = useState<"en" | "local">("local");
+
+  const [inputMode,  setInputMode]  = useState<InputMode>("text");
+  const [urlInput,   setUrlInput]   = useState("");
+  const [urlLoading, setUrlLoading] = useState(false);
+  const [urlStatus,  setUrlStatus]  = useState<UrlStatus | null>(null);
+
+  // Крутим сообщения лоадера — для search рандомный порядок
   useEffect(() => {
     if (!loading) return;
-    setLoadingStepIdx(0);
-    setQuoteIdx(Math.floor(Math.random() * FUNNY_QUOTES.length));
-    const li = setInterval(() => setLoadingStepIdx(p => Math.min(p + 1, 3)), 1500);
-    const qi = setInterval(() => setQuoteIdx(p => (p + 1) % FUNNY_QUOTES.length), 4000);
-    return () => { clearInterval(li); clearInterval(qi); };
-  }, [loading]);
+    const msgs =
+      step === "search"   ? shuffleArray(SEARCH_MSGS_POOL) :
+      step === "evaluate" ? EVAL_MSGS : IMPROV_MSGS;
+    setLoadMsgs(msgs);
+    setLoadMsg(0);
+    const id = setInterval(() => setLoadMsg(m => (m + 1) % msgs.length), 2200);
+    return () => clearInterval(id);
+  }, [loading, step]);
 
-  const switchStep = (s: StepKey) => { setStep(s); setSidebarOpen(false); setError(null); };
-  const resetToHome = () => {
-    setStep("search"); setNewsItems(null); setEvalResult(null); setImproveResult(null);
-    setSelectedTrend(null); setGlobalText(""); setSidebarOpen(false); setKeyword(""); setKeywordFocus("");
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const showToast  = (msg: string) => setToast(msg);
+  const switchStep = (s: StepKey) => { setStep(s); setError(null); };
+  const copyText   = (text: string, label = "Скопировано!") =>
+    navigator.clipboard.writeText(text).then(() => showToast(`✓ ${label}`));
+  const resetAll   = () => {
+    setNewsItems(null); setEvalResult(null); setImproveResult(null);
+    setError(null); setUrlStatus(null); setSelectedTrend(null);
   };
 
-  const handleFetchUrl = async () => {
-    if (!urlInput) return;
-    setLoading(true);
-    setError(null);
+  const handleFetchUrl = useCallback(async () => {
+    if (!urlInput.trim()) return;
+    setUrlLoading(true); setUrlStatus(null);
     try {
-      const res  = await fetch("/api/resonance-trends", { 
-        method: "POST", headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify({ action: "fetch-url", url: urlInput }) 
-      });
+      const res  = await fetch("/api/fetch-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: urlInput.trim() }) });
       const data = await res.json();
-      if (data.text) setGlobalText(data.text);
-      else setError(data.error || "Ошибка парсинга URL");
-    } catch { setError("Ошибка сети при загрузке страницы"); }
-    finally   { setLoading(false); }
-  };
+      if (!res.ok || data.error) { setUrlStatus({ type: "error", message: data.error || "Не удалось загрузить URL" }); return; }
+      setEvalText(data.text);
+      setUrlStatus({ type: "success", message: "Содержимое успешно извлечено", domain: data.domain, charCount: data.charCount, truncated: data.truncated });
+    } catch { setUrlStatus({ type: "error", message: "Ошибка сети. Проверьте соединение." }); }
+    finally   { setUrlLoading(false); }
+  }, [urlInput]);
 
-  const handleSearch = async () => {
-    setLoading(true); setError(null); setNewsItems(null);
-    const kw = keyword.trim();
-    setKeywordFocus(kw);
+  const handleSearch = useCallback(async () => {
+    setLoading(true); setLoadMsg(0); setError(null); setNewsItems(null);
     try {
-      const res  = await fetch("/api/resonance-trends", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "search", market, keyword: kw || undefined, customPrompts: buildApiPrompts(), models: settings.models }),
-      });
+      const res  = await fetch(`/api/resonance-trends?market=${market}`);
       const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка сервера"); return; }
       setNewsItems(data.items || []);
-    } catch { setError("Не удалось загрузить тренды."); }
+    } catch { setError("Ошибка сети. Попробуйте ещё раз."); }
     finally   { setLoading(false); }
-  };
+  }, [market]);
 
-  const handleUseTrend = (item: NewsItem) => { setSelectedTrend(item); switchStep("evaluate"); };
-
-  const handleEvaluate = async () => {
-    if (!globalText.trim()) return;
-    setLoading(true); setError(null); setEvalResult(null);
+  const handleEvaluate = useCallback(async () => {
+    if (!evalText.trim()) return;
+    setLoading(true); setLoadMsg(0); setError(null); setEvalResult(null);
     try {
       const res  = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "evaluate", text: globalText, market, trendContext: selectedTrend, customPrompts: buildApiPrompts(), models: settings.models }),
+        body: JSON.stringify({ action: "evaluate", text: evalText.trim(), market }),
       });
       const data = await res.json();
-      if (data.verdict) setEvalResult(data);
-      else setError("Система вернула неполные данные.");
-    } catch { setError("Ошибка при анализе."); }
+      if (!res.ok) { setError(data.error || "Ошибка сервера"); return; }
+      if (!data.verdict) { setError("Неполный ответ ИИ. Попробуйте ещё раз."); return; }
+      setEvalResult(data);
+    } catch { setError("Ошибка сети. Попробуйте ещё раз."); }
     finally   { setLoading(false); }
-  };
+  }, [evalText, market]);
 
-  const handleImprove = async () => {
-    setLoading(true); setError(null); setImproveResult(null);
+  const handleImprove = useCallback(async () => {
+    const src = improveText.trim() || evalText.trim();
+    if (!src) return;
+    setLoading(true); setLoadMsg(0); setError(null); setImproveResult(null);
     try {
       const res  = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "improve", text: globalText, market, trendContext: selectedTrend, preset: presetAction, customPrompts: buildApiPrompts(), models: settings.models }),
+        body: JSON.stringify({
+          action: "improve",
+          text: src, market,
+          context: improveCtx,
+          preset: activePreset,
+          trendName:    selectedTrend?.headline      || "",
+          trendTension: selectedTrend?.business_impact || "",
+        }),
       });
       const data = await res.json();
-      if (data.improved_local) setImproveResult(data);
-      else setError("Не удалось сгенерировать текст.");
-    } catch { setError("Ошибка генерации."); }
+      if (!res.ok) { setError(data.error || "Ошибка сервера"); return; }
+      if (!data.improved_text) { setError("Неполный ответ ИИ. Попробуйте ещё раз."); return; }
+      setImproveResult(data);
+    } catch { setError("Ошибка сети. Попробуйте ещё раз."); }
     finally   { setLoading(false); }
-  };
-
-  const groupedTrends = (newsItems || []).reduce<Record<string, NewsItem[]>>((acc, item) => {
-    const key = item.topic || "Общее";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
+  }, [improveText, improveCtx, evalText, market, activePreset, selectedTrend]);
 
   const renderToneBar = (labelL: string, labelR: string, val: number) => {
-    const pct = Math.max(0, Math.min(100, ((val + 5) / 10) * 100));
+    const pct = ((val + 5) / 10) * 100;
     return (
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px", color: "var(--t2)", marginBottom: 7 }}>
-          <span>{labelL}</span><span>{labelR}</span>
-        </div>
-        <div style={{ position: "relative", height: 5, background: "var(--bg)", borderRadius: 99, border: "1px solid var(--border-xs)" }}>
-          <div style={{ position: "absolute", left: "50%", top: -3, bottom: -3, width: 1.5, background: "var(--border)" }} />
-          <div style={{ position: "absolute", top: "50%", width: 14, height: 14, borderRadius: "50%", background: "var(--orange)", border: "2.5px solid white", transform: "translate(-50%, -50%)", left: `${pct}%`, transition: "left 0.5s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: "0 2px 6px rgba(249,115,22,0.3)" }} />
-        </div>
+      <div className="tone-row">
+        <div className="tone-labels"><span>{labelL}</span><span>{labelR}</span></div>
+        <div className="tone-track"><div className="tone-mid" /><div className="tone-dot" style={{ left: `${pct}%` }} /></div>
       </div>
     );
   };
 
+  const renderSearch = () => (
+    <div>
+      <div className="market-selector">
+        {(Object.entries(MARKETS) as [MarketKey, typeof MARKETS[MarketKey]][]).map(([key, m]) => (
+          <button key={key} className={`market-card ${market === key ? "active" : ""}`} onClick={() => setMarket(key)}>
+            <span className="market-card-flag">{m.flag}</span>
+            <div className="market-card-name">{m.labelRu}</div>
+            <div className="market-card-desc">{m.desc}</div>
+          </button>
+        ))}
+      </div>
+      <button className="btn-search" onClick={handleSearch} disabled={loading}>
+        {loading ? <><span className="spinner-sm" /> Сканирую рынок...</> : `◎ Найти тренды — ${MARKETS[market].labelRu} ${MARKETS[market].flag}`}
+      </button>
+      {loading && (<div className="loader" style={{ marginTop: 24 }}><div className="spinner" /><div className="loader-label">Формирую дайджест</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
+      {!loading && error && <div className="error-box" style={{ marginTop: 20 }}>⚠ {error}</div>}
+      {!loading && !error && !newsItems && (<div className="empty" style={{ marginTop: 8 }}><div className="empty-icon">◎</div><div className="empty-title">Нет данных</div><p className="empty-text">Выберите рынок и нажмите кнопку, чтобы получить свежий B2B-дайджест.</p></div>)}
+      {!loading && newsItems && (
+        <div className="news-grid">
+          {newsItems.map((item, i) => (
+            <div className="news-card" key={i}>
+              <div className="news-card-top">
+                <span className="news-category">{item.category}</span>
+                <span className={`news-score ${newsScoreClass(item.resonance_score)}`}>↑ {item.resonance_score}</span>
+              </div>
+              <div className="news-headline">{item.headline}</div>
+              <div className="news-summary">{item.summary}</div>
+              <div className="news-impact"><div className="news-impact-label">Влияние на B2B</div>{item.business_impact}</div>
+              <button className="news-card-use" onClick={() => { setSelectedTrend(item); setImproveText(""); setImproveCtx(item.headline); switchStep("improve"); }}>◆ Улучшить текст под этот тренд →</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderEvaluate = () => (
+    <div className="split">
+      <div className="card" style={{ position: "sticky", top: 60 }}>
+        <div className="mode-tabs">
+          <button className={`mode-tab ${inputMode === "text" ? "active" : ""}`} onClick={() => { setInputMode("text"); setUrlStatus(null); }}>✏️ Вставить текст</button>
+          <button className={`mode-tab ${inputMode === "url" ? "active" : ""}`} onClick={() => setInputMode("url")}>🔗 По ссылке</button>
+        </div>
+        {inputMode === "url" && (
+          <div style={{ marginBottom: 14 }}>
+            <p className="field-label">Адрес страницы</p>
+            <div className="url-wrap">
+              <span className="url-icon">🌐</span>
+              <input className="url-inp" type="url" value={urlInput} onChange={e => { setUrlInput(e.target.value); setUrlStatus(null); }} onKeyDown={e => e.key === "Enter" && handleFetchUrl()} placeholder="https://example.com/страница" />
+            </div>
+            <button className="btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={handleFetchUrl} disabled={urlLoading || !urlInput.trim()}>
+              {urlLoading ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Извлекаю...</> : "Извлечь содержимое →"}
+            </button>
+            {urlStatus && <div className={`url-status ${urlStatus.type}`}>{urlStatus.type === "success" ? "✓" : "⚠"} {urlStatus.message}</div>}
+            {urlStatus?.type === "success" && (<div className="url-meta"><span className="url-meta-domain">📄 {urlStatus.domain}</span><span className="url-meta-chars">{urlStatus.charCount?.toLocaleString()} симв.{urlStatus.truncated ? " (обрезано)" : ""}</span></div>)}
+            {!urlStatus && !urlLoading && <p className="url-hint">Работает с открытыми страницами. Сайты с авторизацией могут не загрузиться — вставьте текст вручную.</p>}
+            {urlStatus?.type === "success" && evalText && (<><p className="field-label" style={{ marginTop: 12 }}>Предпросмотр</p><div className="preview-box">{evalText.slice(0, 280)}...<div className="preview-fade" /></div></>)}
+          </div>
+        )}
+        {inputMode === "text" && (<><p className="field-label">Ваш маркетинговый текст</p><textarea className="inp" rows={9} value={evalText} onChange={e => setEvalText(e.target.value)} placeholder="Вставьте текст: заголовок, email, лендинг, CTA..." /></>)}
+        {inputMode === "url" && urlStatus?.type === "success" && (<><p className="field-label" style={{ marginTop: 8 }}>Редактировать перед анализом</p><textarea className="inp" rows={4} value={evalText} onChange={e => setEvalText(e.target.value)} /></>)}
+        <button className="btn-primary" onClick={handleEvaluate} disabled={loading || !evalText.trim() || urlLoading}>
+          {loading ? <><span className="spinner-sm" /> Проверяю...</> : `◈ Проверить для ${MARKETS[market].flag} ${MARKETS[market].labelRu}`}
+        </button>
+        {evalResult && (<button className="btn-ghost" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => { setImproveText(evalText); switchStep("improve"); }}>◆ Улучшить этот текст →</button>)}
+      </div>
+      <div>
+        {loading && (<div className="loader"><div className="spinner" /><div className="loader-label">Аудит контента</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
+        {!loading && error && <div className="error-box" style={{ marginBottom: 14 }}>⚠ {error}</div>}
+        {!loading && !evalResult && !error && (<div className="empty"><div className="empty-icon">◈</div><div className="empty-title">Готов к проверке</div><p className="empty-text">{inputMode === "url" ? "Вставьте ссылку, извлеките страницу и нажмите «Проверить»." : "Вставьте текст и нажмите «Проверить», чтобы выявить культурные ошибки."}</p></div>)}
+        {!loading && evalResult && (() => {
+          const vc = VERDICT_CFG[evalResult.verdict];
+          return (
+            <div className="stack">
+              <div className="verdict-banner" style={{ background: vc.bg, borderColor: vc.border, color: vc.color }}>
+                <div className="verdict-icon">{vc.icon}</div>
+                <div><div className="verdict-label">{evalResult.verdict} — {vc.label}</div><div className="verdict-reason">{evalResult.verdict_reason}</div></div>
+              </div>
+              {evalResult.trend_context && (<div className="ctx-box"><span className="ctx-icon">📡</span><span><strong>Сигнал рынка:</strong> {evalResult.trend_context}</span></div>)}
+              <div className="grid2">
+                <div className="card" style={{ margin: 0 }}>
+                  <p className="field-label">Карта тона</p>
+                  {renderToneBar("Формальный",  "Неформальный", evalResult.tone_map.formal_casual)}
+                  {renderToneBar("Дерзкий",     "Осторожный",   evalResult.tone_map.bold_cautious)}
+                  {renderToneBar("Технический", "Про пользу",   evalResult.tone_map.technical_benefit)}
+                  {renderToneBar("Абстрактный", "Конкретный",   evalResult.tone_map.abstract_concrete)}
+                  {renderToneBar("Переведённый","Нативный",     evalResult.tone_map.global_native)}
+                </div>
+                <div className="stack">
+                  <div className="card" style={{ margin: 0 }}>
+                    <p className="field-label">Индекс шаблонности</p>
+                    <div className="score-big" style={{ color: scoreColor(evalResult.genericness_score) }}>{evalResult.genericness_score}<span style={{ fontSize: 15, color: "var(--t3)", fontWeight: 400 }}>/100</span></div>
+                    <p className="score-sub">{evalResult.genericness_score < 35 ? "Оригинально и локально" : evalResult.genericness_score < 65 ? "Типичный SaaS-голос" : "Чистые US-клише"}</p>
+                    <div className="badge-row">{evalResult.generic_phrases.map((p, i) => <span className="badge" key={i}>«{p}»</span>)}</div>
+                  </div>
+                  <div className="card" style={{ margin: 0 }}>
+                    <p className="field-label">Отсутствующие сигналы доверия</p>
+                    <ul className="trust-list">{evalResult.missing_trust_signals.map((s, i) => <li className="trust-item" key={i}><span>✕</span>{s}</li>)}</ul>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="row" style={{ marginBottom: 12, justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>Предлагаемые правки</span>
+                  <button className="btn-ghost" onClick={() => copyText(evalResult.brief_text, "Бриф скопирован!")}>📋 Скопировать бриф</button>
+                </div>
+                <div className="stack">
+                  {evalResult.rewrites.map((rw, i) => (
+                    <div className="rw-card" key={i}>
+                      <div className="rw-tag">{rw.block}</div>
+                      <div className="rw-cols">
+                        <div><div className="rw-col-label">Оригинал</div><div className="rw-block">{rw.original}</div></div>
+                        <div>
+                          <div className="rw-col-label">Локализовано {MARKETS[market].flag}</div>
+                          <div className="rw-block local">{rw.suggested_local}</div>
+                          {rw.suggested !== rw.suggested_local && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>EN: {rw.suggested}</div>}
+                        </div>
+                      </div>
+                      <div className="rw-reason">💡 {rw.reason}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+
+  const renderImprove = () => (
+    <div className="split">
+      <div className="card" style={{ position: "sticky", top: 60 }}>
+        {selectedTrend && (
+          <div style={{ marginBottom: 14, padding: "10px 14px", background: "var(--violet-a)", borderRadius: "var(--r-sm)", border: "1px solid rgba(124,58,237,0.2)" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px", color: "var(--violet)", marginBottom: 4 }}>Тренд из поиска</div>
+            <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.5 }}>{selectedTrend.headline}</div>
+            <button style={{ marginTop: 6, background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--t3)", padding: 0 }} onClick={() => setSelectedTrend(null)}>✕ Убрать</button>
+          </div>
+        )}
+        <p className="field-label">Формат</p>
+        <div className="preset-grid">
+          {PRESETS.map(p => (
+            <button key={p.id} className={`preset-btn ${activePreset === p.id ? "active" : ""}`} onClick={() => setActivePreset(p.id)}>
+              <div className="preset-btn-icon">{p.icon}</div>
+              <div className="preset-btn-label">{p.label}</div>
+              <div className="preset-btn-desc">{p.desc}</div>
+            </button>
+          ))}
+        </div>
+        <p className="field-label">Текст для улучшения</p>
+        <textarea className="inp" rows={7} value={improveText || evalText} onChange={e => setImproveText(e.target.value)} placeholder="Вставьте текст или он перенесётся из «Проверки»..." />
+        <p className="field-label" style={{ marginTop: 14 }}>Контекст (необязательно)</p>
+        <textarea className="inp" rows={2} value={improveCtx} onChange={e => setImproveCtx(e.target.value)} placeholder="Тренд рынка, позиционирование, целевая персона..." />
+        <button className="btn-primary" onClick={handleImprove} disabled={loading || !(improveText.trim() || evalText.trim())}>
+          {loading ? <><span className="spinner-sm" /> Переписываю...</> : `◆ Применить — ${MARKETS[market].flag} ${MARKETS[market].labelRu}`}
+        </button>
+      </div>
+      <div>
+        {loading && (<div className="loader"><div className="spinner" /><div className="loader-label">Переписываю для {MARKETS[market].labelRu}</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
+        {!loading && error && <div className="error-box" style={{ marginBottom: 14 }}>⚠ {error}</div>}
+        {!loading && !improveResult && !error && (<div className="empty"><div className="empty-icon">◆</div><div className="empty-title">Готов к улучшению</div><p className="empty-text">Текст будет переписан под {MARKETS[market].labelRu}: нативный тон, правильные сигналы доверия, локальный CTA.</p></div>)}
+        {!loading && improveResult && (
+          <div className="stack">
+            <div className="tone-tag">✓ {improveResult.tone_achieved}</div>
+            <div className="improve-result">
+              <div className="improve-tabs">
+                <button className={`improve-tab ${improveTab === "local" ? "active" : ""}`} onClick={() => setImproveTab("local")}>{MARKETS[market].flag} Локальная версия</button>
+                <button className={`improve-tab ${improveTab === "en" ? "active" : ""}`} onClick={() => setImproveTab("en")}>English</button>
+                <button className="btn-ghost" style={{ marginLeft: "auto" }} onClick={() => copyText(improveTab === "local" ? improveResult.improved_local : improveResult.improved_text, "Текст скопирован!")}>📋 Скопировать</button>
+              </div>
+              <div className="improve-body">{improveTab === "local" ? improveResult.improved_local : improveResult.improved_text}</div>
+            </div>
+            {improveResult.changes?.length > 0 && (
+              <div>
+                <p className="field-label" style={{ marginBottom: 8 }}>Что изменено и почему</p>
+                <div className="change-list">
+                  {improveResult.changes.map((c, i) => (<div className="change-item" key={i}><div className="change-what">{c.what}</div><div className="change-why">{c.why}</div></div>))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="shell">
       <style>{STYLE}</style>
-
-      <div className={`overlay ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
-
-      {settingsOpen && (
-        <SettingsModal settings={settings} onSave={saveSettings} onClose={() => setSettingsOpen(false)} />
-      )}
-
-      {/* ── Сайдбар ── */}
-      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        <button className="logo" onClick={resetToHome}>
-          <div className="logo-mark">B</div>Breason
-        </button>
-        <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <aside className="sidebar">
+        <div className="logo"><div className="logo-mark">B</div>Breason</div>
+        <p className="sb-label">Разделы</p>
+        <nav className="nav-list">
           {(Object.entries(STEPS) as [StepKey, typeof STEPS[StepKey]][]).map(([key, s]) => (
             <button key={key} className={`nav-btn ${step === key ? "active" : ""}`} onClick={() => switchStep(key)}>
-              <div className="nav-num">{s.num}</div>
-              <div className="nav-label">{s.label}</div>
+              <div className="nav-num">{s.num}</div><div className="nav-label">{s.label}</div>
             </button>
           ))}
         </nav>
-        
-        {/* Кнопка настроек внизу сайдбара */}
-        <div className="settings-nav-btn">
-          <button className="nav-btn" onClick={() => { setSettingsOpen(true); setSidebarOpen(false); }}>
-            <div className="nav-num" style={{ background: 'transparent', fontSize: 16 }}>⚙️</div>
-            <div className="nav-label">Настройки</div>
-          </button>
-        </div>
+        <div className="sb-footer">Breason v2.0<br /><span style={{ opacity: 0.5 }}>Не перевод. Резонанс.</span></div>
       </aside>
-
-      {/* ── Основная область ── */}
       <div className="main">
         <header className="topbar">
-          <div className="topbar-left">
-            <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>☰</button>
-            <span className="topbar-title">
-              Breason <span className="topbar-sep">/</span> {STEPS[step].label}
-            </span>
+          <div className="tab-pills">
+            {(Object.entries(STEPS) as [StepKey, typeof STEPS[StepKey]][]).map(([key, s]) => (
+              <button key={key} className={`tab-pill ${step === key ? "active" : ""}`} onClick={() => switchStep(key)}>
+                <span className="tab-pill-num">{s.num}</span>{s.label}
+              </button>
+            ))}
           </div>
-          <div className="topbar-right">
-            <MarketPicker market={market} onChange={setMarket} />
-          </div>
+          <div className="topbar-market">{MARKETS[market].flag} {MARKETS[market].labelRu}</div>
+          {(evalResult || improveResult || newsItems) && <button className="btn-reset" onClick={resetAll}>↺ Сбросить</button>}
         </header>
-
         <main className="page">
-
-          {/* ── ШАГ 1: ПОИСК ТРЕНДОВ ── */}
-          {step === "search" && (
-            <div className="stack">
-              <div className="card">
-                <p className="field-label">1. Целевой рынок</p>
-                <div className="market-selector">
-                  {(Object.entries(MARKETS) as [MarketKey, typeof MARKETS[MarketKey]][]).map(([key, m]) => (
-                    <button key={key} className={`market-card ${market === key ? "active" : ""}`} onClick={() => setMarket(key)}>
-                      <span className="market-card-flag">{m.flag}</span>
-                      <span className="market-card-name">{m.labelRu}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <p className="field-label">2. Фокус (необязательно)</p>
-                <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-                  <input
-                    className="inp" type="text" value={keyword}
-                    onChange={e => setKeyword(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && !loading && handleSearch()}
-                    placeholder="Например: AI, логистика, финтех..."
-                  />
-                  {keyword && <button className="btn-action" onClick={() => setKeyword("")} style={{ flexShrink: 0 }}>✕</button>}
-                </div>
-
-                <button className="btn-primary" onClick={handleSearch} disabled={loading}>
-                  {loading ? "Анализ рынка..." : `Найти тренды — ${MARKETS[market].labelRu}`}
-                </button>
-              </div>
-
-              {loading && <ProgressStream steps={LOADING_MSGS.search} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
-              {!loading && error && (
-                <div style={{ color: "var(--red)", padding: "13px 16px", background: "rgba(239,68,68,0.05)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.15)" }}>{error}</div>
-              )}
-
-              {!loading && newsItems && newsItems.length > 0 && (
-                <div>
-                  {keywordFocus && (
-                    <div style={{ display: "inline-flex", padding: "5px 14px", background: "var(--orange-a)", color: "var(--orange)", borderRadius: 99, fontSize: 12.5, fontWeight: 700, marginBottom: 20, border: "1px solid rgba(249,115,22,0.2)" }}>
-                      🔍 Фокус: «{keywordFocus}»
-                    </div>
-                  )}
-                  {Object.entries(groupedTrends).map(([topic, items]) => (
-                    <div key={topic} className="topic-section">
-                      <div className="topic-header">
-                        <span className="topic-label">{topic}</span>
-                        <div className="topic-line" />
-                        <span className="topic-count">{items.length}</span>
-                      </div>
-                      <div className="news-grid">
-                        {items.map((item, i) => (
-                          <div className="news-card" key={i}>
-                            <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--orange)", background: "var(--orange-a)", padding: "3px 8px", borderRadius: 5, display: "inline-block", width: "fit-content" }}>
-                              {item.category}
-                            </div>
-                            <h3 className="news-headline">{item.headline}</h3>
-                            <p style={{ fontSize: 12.5, color: "var(--t2)", flex: 1, lineHeight: 1.55 }}>{item.summary}</p>
-                            <p style={{ fontSize: 11.5, color: "var(--t3)", padding: "9px 11px", background: "var(--bg)", borderRadius: 7, borderLeft: "2.5px solid var(--orange)", lineHeight: 1.5 }}>
-                              {item.business_impact}
-                            </p>
-                            <button className="btn-use-trend" onClick={() => handleUseTrend(item)}>
-                              Проверить текст под тренд →
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── ШАГ 2: ОЦЕНКА КОНТЕНТА ── */}
-          {step === "evaluate" && (
-            <div className="split">
-              <div className="stack" style={{ position: "sticky", top: 72 }}>
-                <div className="card">
-                  <p className="field-label">Контекст</p>
-                  {selectedTrend ? (
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 13px", background: "var(--lime-a)", color: "var(--lime-d)", borderRadius: 8, fontSize: 12.5, fontWeight: 600, marginBottom: 18, border: "1px solid rgba(132,204,22,0.25)" }}>
-                      🎯 {selectedTrend.headline.length > 35 ? selectedTrend.headline.slice(0, 35) + "…" : selectedTrend.headline}
-                      <span style={{ cursor: "pointer", marginLeft: 4, opacity: 0.5 }} onClick={() => setSelectedTrend(null)}>✕</span>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12.5, color: "var(--t3)", marginBottom: 18 }}>Общая оценка (без тренда)</div>
-                  )}
-
-                  <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                    <button className={`btn-action ${inputMode === "text" ? "active" : ""}`} onClick={() => setInputMode("text")} style={{ flex: 1 }}>Текст</button>
-                    <button className={`btn-action ${inputMode === "url" ? "active" : ""}`} onClick={() => setInputMode("url")} style={{ flex: 1 }}>Ссылка</button>
-                  </div>
-
-                  {inputMode === "url" && (
-                    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                      <input className="inp" style={{ padding: "11px 13px", flex: 1, margin: 0 }} placeholder="https://" value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleFetchUrl()} />
-                      <button className="btn-action" onClick={handleFetchUrl} disabled={loading}>Загрузить</button>
-                    </div>
-                  )}
-
-                  <p className="field-label">Маркетинговый текст</p>
-                  <textarea className="inp" rows={8} value={globalText} onChange={e => setGlobalText(e.target.value)} placeholder="Вставьте текст для анализа..." />
-                  <button className="btn-primary" onClick={handleEvaluate} disabled={loading || !globalText.trim()} style={{ marginTop: 20 }}>
-                    {loading ? "Идёт аудит..." : `Оценить для ${MARKETS[market].labelRu}`}
-                  </button>
-                </div>
-              </div>
-
-              <div className="stack">
-                {loading && <ProgressStream steps={LOADING_MSGS.evaluate} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
-                {!loading && error && <div style={{ color: "var(--red)" }}>{error}</div>}
-                {!loading && !evalResult && !error && (
-                  <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--t3)" }}>
-                    <div style={{ fontSize: 38, opacity: 0.12, marginBottom: 14 }}>◈</div>
-                    <p style={{ fontSize: 14 }}>Нажмите «Оценить».</p>
-                  </div>
-                )}
-
-                {!loading && evalResult && (() => {
-                  const vc = VERDICT_CFG[evalResult.verdict];
-                  return (
-                    <>
-                      <div className="card" style={{ background: vc.bg, borderColor: vc.border }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                          <div style={{ width: 52, height: 52, borderRadius: 12, background: "var(--surface)", display: "grid", placeItems: "center", fontSize: 24, color: vc.color, boxShadow: "var(--shadow-md)", flexShrink: 0 }}>{vc.icon}</div>
-                          <div>
-                            <h2 style={{ fontFamily: "Syne", fontSize: 22, color: vc.color, margin: 0, fontWeight: 800 }}>{evalResult.verdict} — {vc.label}</h2>
-                            <p style={{ margin: "5px 0 0", fontSize: 14.5, color: "var(--t1)" }}>{evalResult.verdict_reason}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid2">
-                        <div className="card">
-                          <p className="field-label" style={{ marginBottom: 18 }}>Карта тона</p>
-                          {renderToneBar("Формальный", "Кэжуал",    evalResult.tone_map.formal_casual)}
-                          {renderToneBar("Дерзкий",    "Осторожный", evalResult.tone_map.bold_cautious)}
-                          {renderToneBar("Технический", "Про пользу", evalResult.tone_map.technical_benefit)}
-                          {renderToneBar("Абстрактный", "Конкретный", evalResult.tone_map.abstract_concrete)}
-                          {renderToneBar("Перевод",    "Нативный",   evalResult.tone_map.global_native)}
-                        </div>
-                        <div className="stack">
-                          <div className="card">
-                            <p className="field-label">Индекс клише</p>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
-                              <span style={{ fontFamily: "Syne", fontSize: 38, fontWeight: 800, color: evalResult.genericness_score > 60 ? "var(--red)" : "var(--lime-d)" }}>{evalResult.genericness_score}</span>
-                              <span style={{ fontSize: 14, color: "var(--t3)" }}>/100</span>
-                            </div>
-                            <div>{evalResult.generic_phrases?.map((p, i) => <span key={i} style={{ padding: "5px 11px", background: "#FEE2E2", color: "#B91C1C", fontSize: 12, fontWeight: 600, borderRadius: 7, margin: "0 7px 7px 0", display: "inline-block" }}>«{p}»</span>)}</div>
-                          </div>
-                          <div className="card">
-                            <p className="field-label">Красные флаги</p>
-                            {evalResult.missing_trust_signals?.map((s, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 14px", background: "var(--bg)", borderRadius: 9, fontSize: 13, color: "var(--t2)", borderLeft: "3px solid var(--red)", marginBottom: 8 }}>✕ {s}</div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="sticky-footer">
-                        <button className="btn-sticky" onClick={() => switchStep("improve")}>✨ Улучшить с учётом правок →</button>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* ── ШАГ 3: УЛУЧШЕНИЕ ── */}
-          {step === "improve" && (
-            <div className="split">
-              <div className="stack" style={{ position: "sticky", top: 72 }}>
-                <div className="card">
-                  <p className="field-label">1. Целевой формат</p>
-                  <div className="preset-grid">
-                    {PRESETS.map(p => (
-                      <button key={p.id} className={`preset-card ${presetAction === p.id ? "active" : ""}`} onClick={() => setPresetAction(p.id)}>
-                        <div style={{ fontSize: 17, marginBottom: 7 }}>{p.icon}</div>
-                        <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 3 }}>{p.label}</div>
-                        <div style={{ fontSize: 11, opacity: 0.65, lineHeight: 1.4 }}>{p.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                  <button className="btn-primary" onClick={handleImprove} disabled={loading || !globalText.trim()} style={{ marginBottom: 20 }}>
-                    {loading ? "Генерация..." : "🪄 Применить магию"}
-                  </button>
-                  <p className="field-label">2. Исходный текст</p>
-                  <textarea className="inp" rows={10} value={globalText} onChange={e => setGlobalText(e.target.value)} placeholder="Вставьте текст для обработки..." />
-                </div>
-              </div>
-
-              <div className="stack">
-                {loading && <ProgressStream steps={LOADING_MSGS.improve} activeIdx={loadingStepIdx} quoteIdx={quoteIdx} />}
-                {!loading && error && <div style={{ color: "var(--red)" }}>{error}</div>}
-                {!loading && !improveResult && !error && (
-                  <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--t3)" }}>
-                    <div style={{ fontSize: 38, opacity: 0.12, marginBottom: 14 }}>✨</div>
-                    <p style={{ fontSize: 14 }}>Выберите формат и нажмите кнопку.</p>
-                  </div>
-                )}
-                {!loading && improveResult && (
-                  <>
-                    <div className="card" style={{ borderLeft: "4px solid var(--orange)" }}>
-                      <div style={{ display: "inline-flex", padding: "7px 14px", background: "var(--orange-a)", color: "var(--orange-d)", borderRadius: 7, fontSize: 12.5, fontWeight: 700, marginBottom: 20, border: "1px solid rgba(249,115,22,0.18)" }}>
-                        ✓ {improveResult.tone_achieved}
-                      </div>
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 15.5, lineHeight: 1.8, color: "var(--t1)" }}>{improveResult.improved_local}</div>
-                    </div>
-                    <div className="card">
-                      <p className="field-label">Что и почему изменено</p>
-                      <div className="stack" style={{ gap: 10 }}>
-                        {improveResult.changes?.map((c, i) => (
-                          <div key={i} style={{ padding: 14, background: "var(--bg)", borderRadius: 9, borderLeft: "3px solid var(--violet)" }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5 }}>{c.what}</div>
-                            <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.5 }}>{c.why}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
+          {step === "search"   && renderSearch()}
+          {step === "evaluate" && renderEvaluate()}
+          {step === "improve"  && renderImprove()}
         </main>
       </div>
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
