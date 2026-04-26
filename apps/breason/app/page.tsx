@@ -1,71 +1,50 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // ── Типы ─────────────────────────────────────────────────────────────────────
 
-type MarketKey   = "germany" | "poland" | "brazil";
+type MarketKey   = "germany" | "poland" | "brazil" | "latam" | "com";
 type StepKey     = "search" | "evaluate" | "improve";
 type VerdictType = "PASS" | "SUSPICIOUS" | "FOREIGN";
 type InputMode   = "text" | "url";
 
 interface NewsItem {
-  headline:        string;
-  category:        string;
-  summary:         string;
-  business_impact: string;
-  resonance_score: number;
+  headline: string; category: string; summary: string;
+  business_impact: string; resonance_score: number;
 }
-
 interface ToneMap {
-  formal_casual:     number;
-  bold_cautious:     number;
-  technical_benefit: number;
-  abstract_concrete: number;
-  global_native:     number;
+  formal_casual: number; bold_cautious: number; technical_benefit: number;
+  abstract_concrete: number; global_native: number;
 }
-
 interface Rewrite {
-  block:           string;
-  original:        string;
-  suggested:       string;
-  suggested_local: string;
-  reason:          string;
+  block: string; original: string; problem?: string;
+  suggested: string; suggested_local: string; reason: string;
 }
-
 interface EvaluateResult {
-  verdict:               VerdictType;
-  verdict_reason:        string;
-  genericness_score:     number;
-  generic_phrases:       string[];
-  tone_map:              ToneMap;
-  missing_trust_signals: string[];
-  trend_context:         string;
-  rewrites:              Rewrite[];
-  brief_text:            string;
+  verdict: VerdictType; verdict_reason: string; buyer_reaction?: string;
+  genericness_score: number; generic_phrases: string[];
+  missed_anchors?: string[]; tone_map: ToneMap; tone_gap?: string;
+  missing_trust_signals: string[]; trend_context: string;
+  rewrites: Rewrite[]; brief_text: string; brief_local?: string;
 }
-
 interface ImproveResult {
-  improved_text:  string;
-  improved_local: string;
-  changes:        { what: string; why: string }[];
-  tone_achieved:  string;
+  improved_text: string; improved_local: string;
+  changes: { what: string; why: string }[]; tone_achieved: string;
 }
-
 interface UrlStatus {
-  type:       "success" | "error";
-  message:    string;
-  domain?:    string;
-  charCount?: number;
-  truncated?: boolean;
+  type: "success" | "error"; message: string;
+  domain?: string; charCount?: number; truncated?: boolean;
 }
 
 // ── Константы ─────────────────────────────────────────────────────────────────
 
 const MARKETS: Record<MarketKey, { labelRu: string; flag: string; desc: string }> = {
-  germany: { labelRu: "Германия", flag: "🇩🇪", desc: "Формальный · Точный · Процессный"     },
-  poland:  { labelRu: "Польша",   flag: "🇵🇱", desc: "Прямой · Фактический · Прозрачный"    },
-  brazil:  { labelRu: "Бразилия", flag: "🇧🇷", desc: "Тёплый · Человечный · Доверительный"  },
+  germany: { labelRu: "Германия", flag: "🇩🇪", desc: "Формальный · Точный · Процессный"       },
+  poland:  { labelRu: "Польша",   flag: "🇵🇱", desc: "Прямой · Фактический · Прозрачный"      },
+  brazil:  { labelRu: "Бразилия", flag: "🇧🇷", desc: "Тёплый · Человечный · Доверительный"    },
+  latam:   { labelRu: "LATAM",    flag: "🌎",  desc: "Энергичный · Рост · Испаноязычный"      },
+  com:     { labelRu: "COM",      flag: "🌐",  desc: "Уверенный · Data-driven · ROI-focused"  },
 };
 
 const STEPS: Record<StepKey, { num: string; label: string }> = {
@@ -82,12 +61,11 @@ const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: stri
 
 const DEFAULT_COPY = `Unlock efficiency with our all-in-one AI platform. It's a revolutionary game-changer for your enterprise. Start your free trial today and 10x your productivity seamlessly!`;
 
-// Пресеты улучшения — id соответствует ключам IMPROVE_PRESETS в route.ts
 const PRESETS = [
   { id: "zero_click",     icon: "🕳️", label: "Zero-Click Пост",      desc: "Удержание в ленте без перехода"    },
   { id: "anti_ai",        icon: "📱", label: "Anti-AI",               desc: "Живой текст, написанный «на бегу»" },
   { id: "strong_pov",     icon: "🔥", label: "Провокационное мнение", desc: "Позиция, с которой хочется спорить"},
-  { id: "thread_starter", icon: "🧵", label: "Виральный тред",        desc: "Тред из 5 частей для LinkedIn / X" },
+  { id: "thread_starter", icon: "🧵", label: "Виральный тред",        desc: "Тред из 5 частей для соцсетей"    },
   { id: "re_engage",      icon: "♻️", label: "Реанимация лидов",      desc: "Пишем лидам «не сейчас»"           },
   { id: "data_story",     icon: "📊", label: "Data Story",            desc: "Инсайт с данными — 3x репостов"    },
   { id: "community_drop", icon: "🫂", label: "Community Drop",        desc: "Органичный пост в нишевое комьюнити"},
@@ -95,21 +73,12 @@ const PRESETS = [
 
 type PresetId = typeof PRESETS[number]["id"];
 
-// Пул иронических загрузочных сообщений — берётся в random-порядке
 const SEARCH_MSGS_POOL = [
-  "Сканируем деловые СМИ...",
-  "Отбираем ключевые сигналы...",
-  "Формируем дайджест...",
-  "Звоним инсайдерам...",
-  "Ужинаем с депутатами...",
-  "Общаемся с Уорреном Баффетом...",
-  "Идём к гадалке...",
-  "Раскладываем карты Таро...",
-  "Гадаем на кофейной гуще...",
-  "Читаем Bloomberg...",
-  "Подкупаем бухгалтеров...",
+  "Сканируем деловые СМИ...", "Отбираем ключевые сигналы...", "Формируем дайджест...",
+  "Звоним инсайдерам...", "Ужинаем с депутатами...", "Общаемся с Уорреном Баффетом...",
+  "Идём к гадалке...", "Раскладываем карты Таро...", "Гадаем на кофейной гуще...",
+  "Читаем Bloomberg...", "Подкупаем бухгалтеров...",
 ];
-
 const EVAL_MSGS   = ["Анализирую тон и культуру...", "Проверяю сигналы доверия...", "Ищу клише...", "Генерирую правки..."];
 const IMPROV_MSGS = ["Читаю профиль рынка...", "Переписываю под аудиторию...", "Полирую нативный тон..."];
 
@@ -122,25 +91,27 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-// ── Хелперы ───────────────────────────────────────────────────────────────────
-
-function newsScoreClass(s: number) {
-  return s >= 75 ? "high" : s >= 45 ? "mid" : "low";
-}
-function scoreColor(s: number) {
-  return s < 35 ? "#3F6212" : s < 65 ? "#C2410C" : "#BE123C";
-}
+function newsScoreClass(s: number) { return s >= 75 ? "high" : s >= 45 ? "mid" : "low"; }
+function scoreColor(s: number) { return s < 35 ? "#3F6212" : s < 65 ? "#C2410C" : "#BE123C"; }
 
 // ── Стили ─────────────────────────────────────────────────────────────────────
-// (единый блок, все CSS-переменные, компоненты, responsive)
 
 const STYLE = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
-:root{--violet:#7C3AED;--violet-d:#6D28D9;--violet-a:rgba(124,58,237,0.1);--lime:#84CC16;--lime-a:rgba(132,204,22,0.12);--lime-d:#65A30D;--orange:#F97316;--orange-d:#EA6C0A;--orange-a:rgba(249,115,22,0.1);--red:#EF4444;--sky-a:rgba(14,165,233,0.08);--sky-b:rgba(14,165,233,0.2);--bg:#F1F5F9;--surface:#FFFFFF;--t1:#0F172A;--t2:#475569;--t3:#94A3B8;--border:rgba(15,23,42,0.1);--border-xs:rgba(15,23,42,0.05);--r:14px;--r-sm:10px}
+:root{
+  --violet:#7C3AED;--violet-d:#6D28D9;--violet-a:rgba(124,58,237,0.1);
+  --lime:#84CC16;--lime-a:rgba(132,204,22,0.12);--lime-d:#65A30D;
+  --orange:#F97316;--orange-d:#EA6C0A;--orange-a:rgba(249,115,22,0.1);
+  --red:#EF4444;--sky-a:rgba(14,165,233,0.08);--sky-b:rgba(14,165,233,0.2);
+  --bg:#F1F5F9;--surface:#FFFFFF;--t1:#0F172A;--t2:#475569;--t3:#94A3B8;
+  --border:rgba(15,23,42,0.1);--border-xs:rgba(15,23,42,0.05);--r:14px;--r-sm:10px
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--t1);-webkit-font-smoothing:antialiased;line-height:1.5}
 .shell{display:flex;min-height:100vh}
+
+/* ── Сайдбар ── */
 .sidebar{width:200px;background:var(--surface);border-right:1px solid var(--border);padding:20px 14px;display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;overflow:hidden}
 .logo{display:flex;align-items:center;gap:9px;font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--t1);margin-bottom:28px;flex-shrink:0}
 .logo-mark{width:26px;height:26px;background:var(--lime);border-radius:6px;display:grid;place-items:center;font-size:13px;font-weight:800;color:#1a2e05;flex-shrink:0}
@@ -152,6 +123,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .nav-btn.active .nav-num{background:var(--violet);color:white}
 .nav-label{font-size:12px;font-weight:600;color:var(--t2)}.nav-btn.active .nav-label{color:var(--violet);font-weight:700}
 .sb-footer{margin-top:auto;padding-top:16px;border-top:1px solid var(--border-xs);font-size:10px;color:var(--t3);line-height:1.7}
+
+/* ── Main + Topbar ── */
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:20;flex-shrink:0;gap:12px}
 .tab-pills{display:flex;gap:4px;background:var(--bg);padding:3px;border-radius:10px}
@@ -162,16 +135,22 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .topbar-market{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--t2);white-space:nowrap}
 .btn-reset{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap;flex-shrink:0}
 .btn-reset:hover{background:var(--bg);color:var(--t2)}
+
+/* ── Page ── */
 .page{flex:1;padding:28px 28px 40px;max-width:1100px;width:100%;margin:0 auto}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
 .field-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--t3);margin-bottom:10px}
-.market-selector{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
-.market-card{padding:16px;border:2px solid var(--border-xs);border-radius:var(--r);background:var(--surface);cursor:pointer;text-align:center;transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;font-family:inherit}
+
+/* ── Market selector ── */
+.market-selector{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.market-card{padding:14px 12px;border:2px solid var(--border-xs);border-radius:var(--r);background:var(--surface);cursor:pointer;text-align:center;transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;font-family:inherit}
 .market-card:hover{border-color:var(--border);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.06)}
 .market-card.active{border-color:var(--lime);background:var(--lime-a);box-shadow:0 4px 16px rgba(132,204,22,.15)}
-.market-card-flag{font-size:32px;margin-bottom:8px;display:block}
-.market-card-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--t1);margin-bottom:4px}
-.market-card-desc{font-size:11px;color:var(--t3);line-height:1.4}
+.market-card-flag{font-size:28px;margin-bottom:6px;display:block}
+.market-card-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px}
+.market-card-desc{font-size:10px;color:var(--t3);line-height:1.35}
+
+/* ── Buttons ── */
 .btn-search{width:100%;padding:15px;background:var(--orange);color:#fff;border:none;border-radius:var(--r-sm);font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:background .15s,transform .15s,box-shadow .15s;display:flex;align-items:center;justify-content:center;gap:8px}
 .btn-search:hover:not(:disabled){background:var(--orange-d);transform:translateY(-2px);box-shadow:0 6px 20px rgba(249,115,22,.3)}
 .btn-search:disabled{background:var(--t3);cursor:not-allowed;transform:none;box-shadow:none}
@@ -180,6 +159,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-primary:disabled{background:var(--t3);cursor:not-allowed;transform:none;box-shadow:none}
 .btn-ghost{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:transparent;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;transition:background .15s;white-space:nowrap}
 .btn-ghost:hover{background:var(--bg)}.btn-ghost:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── News grid ── */
 .news-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:28px}
 .news-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;cursor:default;transition:transform .18s,box-shadow .18s,border-color .18s;display:flex;flex-direction:column;gap:10px}
 .news-card:hover{transform:translateY(-4px) scale(1.01);box-shadow:0 8px 28px rgba(124,58,237,.1);border-color:rgba(124,58,237,.2)}
@@ -195,20 +176,30 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .news-impact-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--orange);margin-bottom:3px}
 .news-card-use{margin-top:auto;padding:7px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:11px;font-weight:600;color:var(--t3);cursor:pointer;transition:.15s;text-align:left}
 .news-card-use:hover{background:var(--violet-a);border-color:rgba(124,58,237,.25);color:var(--violet)}
+
+/* ── Layout ── */
 .split{display:grid;gap:24px;grid-template-columns:340px 1fr;align-items:start}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .stack{display:flex;flex-direction:column;gap:14px}
 .row{display:flex;align-items:center;gap:12px}
+
+/* ── Inputs ── */
 textarea.inp{width:100%;padding:13px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);font-family:inherit;font-size:13px;line-height:1.65;color:var(--t1);resize:vertical;outline:none;transition:border-color .15s,box-shadow .15s;min-height:130px}
 textarea.inp:focus{border-color:var(--violet);background:var(--surface);box-shadow:0 0 0 3px var(--violet-a)}
+
+/* ── Loader ── */
 .loader{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;gap:14px;color:var(--t2)}
 .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--violet);border-radius:50%;animation:spin .75s linear infinite}
 .spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:white;border-radius:50%;animation:spin .75s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loader-label{font-size:14px;font-weight:600}.loader-msg{font-size:12px;color:var(--t3)}
+
+/* ── Empty / Error ── */
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;text-align:center;color:var(--t3);gap:10px}
 .empty-icon{font-size:32px;opacity:.3}.empty-title{font-size:14px;font-weight:600;color:var(--t2)}.empty-text{font-size:12px;max-width:240px;line-height:1.6}
 .error-box{padding:13px 16px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm);color:#B91C1C;font-size:13px;font-weight:500}
+
+/* ── URL mode ── */
 .mode-tabs{display:flex;gap:4px;background:var(--bg);padding:4px;border-radius:var(--r-sm);margin-bottom:14px}
 .mode-tab{flex:1;padding:7px;border:none;border-radius:7px;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--t3);cursor:pointer;transition:.15s}
 .mode-tab.active{background:var(--surface);color:var(--t1);box-shadow:0 1px 4px rgba(0,0,0,.08)}
@@ -223,10 +214,13 @@ textarea.inp:focus{border-color:var(--violet);background:var(--surface);box-shad
 .url-hint{font-size:11px;color:var(--t3);margin-top:8px;line-height:1.5}
 .preview-box{margin-top:12px;padding:10px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--t2);line-height:1.5;max-height:90px;overflow:hidden;position:relative}
 .preview-fade{position:absolute;bottom:0;left:0;right:0;height:32px;background:linear-gradient(transparent,var(--bg))}
+
+/* ── Evaluate ── */
 .verdict-banner{display:flex;align-items:center;gap:14px;padding:15px 18px;border-radius:var(--r);border:1.5px solid;margin-bottom:14px}
 .verdict-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;font-size:16px;font-weight:800;background:rgba(255,255,255,.6);flex-shrink:0}
 .verdict-label{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;margin-bottom:2px}
 .verdict-reason{font-size:13px;font-weight:500;opacity:.8}
+.buyer-reaction{padding:12px 14px;background:var(--bg);border-radius:var(--r-sm);font-size:13px;color:var(--t2);line-height:1.55;border-left:3px solid var(--violet);font-style:italic}
 .tone-row{margin-bottom:12px}.tone-row:last-child{margin-bottom:0}
 .tone-labels{display:flex;justify-content:space-between;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--t2);margin-bottom:5px}
 .tone-track{position:relative;height:5px;background:var(--bg);border-radius:99px}
@@ -247,6 +241,8 @@ textarea.inp:focus{border-color:var(--violet);background:var(--surface);box-shad
 .rw-block{padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.55;border:1px solid var(--border);background:var(--surface);color:var(--t2)}
 .rw-block.local{background:var(--violet-a);border-color:rgba(124,58,237,.2);color:var(--violet);font-weight:500}
 .rw-reason{font-size:12px;color:var(--t3);font-style:italic;padding-top:10px;border-top:1px solid var(--border-xs)}
+
+/* ── Presets ── */
 .preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
 .preset-btn{padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);text-align:left;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s,transform .12s}
 .preset-btn:hover{border-color:var(--violet);background:var(--violet-a);transform:translateY(-1px)}
@@ -254,6 +250,8 @@ textarea.inp:focus{border-color:var(--violet);background:var(--surface);box-shad
 .preset-btn-icon{font-size:16px;margin-bottom:5px}
 .preset-btn-label{font-size:12px;font-weight:700;color:var(--t1);margin-bottom:2px}
 .preset-btn-desc{font-size:10px;color:var(--t3);line-height:1.35}
+
+/* ── Improve result ── */
 .improve-result{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
 .improve-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
 .improve-tab{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;transition:.15s}
@@ -264,18 +262,30 @@ textarea.inp:focus{border-color:var(--violet);background:var(--surface);box-shad
 .change-what{font-size:13px;font-weight:600;color:var(--t1);margin-bottom:3px}
 .change-why{font-size:12px;color:var(--t2)}
 .tone-tag{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(132,204,22,.1);border:1px solid rgba(132,204,22,.25);border-radius:8px;font-size:12px;font-weight:600;color:#3F6212;margin-bottom:14px}
+
+/* ── Toast ── */
 .toast{position:fixed;bottom:20px;right:20px;background:var(--t1);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:500;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.18);animation:fadeUp .25s ease-out}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Mobile ── */
 @media(max-width:768px){
   .sidebar{display:none}
   .topbar{padding:0 16px;height:48px;overflow-x:auto}
   .tab-pill{padding:5px 10px;font-size:11px}.tab-pill-num{display:none}
   .page{padding:16px 16px 32px}
+
+  /* 5 рынков — 1 колонка на мобиле */
   .market-selector{grid-template-columns:1fr;gap:8px}
-  .market-card{display:flex;align-items:center;gap:14px;text-align:left;padding:14px}
-  .market-card-flag{font-size:28px;margin-bottom:0;flex-shrink:0}
+  .market-card{display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px}
+  .market-card-flag{font-size:24px;margin-bottom:0;flex-shrink:0}
+
   .news-grid{grid-template-columns:1fr;gap:12px;margin-top:20px}
-  .split{grid-template-columns:1fr;gap:16px}
+
+  /* КЛЮЧЕВОЙ ФИКС: на мобиле output идёт первым */
+  .split{grid-template-columns:1fr;gap:0}
+  .split-form{order:2;margin-top:16px}
+  .split-output{order:1}
+
   .grid2{grid-template-columns:1fr}
   .rw-cols{grid-template-columns:1fr}
   .topbar-market{display:none}
@@ -290,11 +300,11 @@ export default function BreasonApp() {
   const [step,   setStep]   = useState<StepKey>("search");
   const [market, setMarket] = useState<MarketKey>("germany");
 
-  const [loading,    setLoading]    = useState(false);
-  const [loadMsg,    setLoadMsg]    = useState(0);
-  const [loadMsgs,   setLoadMsgs]   = useState<string[]>([]);
-  const [error,      setError]      = useState<string | null>(null);
-  const [toast,      setToast]      = useState<string | null>(null);
+  const [loading,  setLoading]  = useState(false);
+  const [loadMsg,  setLoadMsg]  = useState(0);
+  const [loadMsgs, setLoadMsgs] = useState<string[]>([]);
+  const [error,    setError]    = useState<string | null>(null);
+  const [toast,    setToast]    = useState<string | null>(null);
 
   const [newsItems,     setNewsItems]     = useState<NewsItem[] | null>(null);
   const [evalResult,    setEvalResult]    = useState<EvaluateResult | null>(null);
@@ -313,12 +323,14 @@ export default function BreasonApp() {
   const [urlLoading, setUrlLoading] = useState(false);
   const [urlStatus,  setUrlStatus]  = useState<UrlStatus | null>(null);
 
-  // Крутим сообщения лоадера — для search рандомный порядок
+  // Refs для мобильного scroll-to-output
+  const outputRefEval    = useRef<HTMLDivElement>(null);
+  const outputRefImprove = useRef<HTMLDivElement>(null);
+
+  // Крутим сообщения лоадера
   useEffect(() => {
     if (!loading) return;
-    const msgs =
-      step === "search"   ? shuffleArray(SEARCH_MSGS_POOL) :
-      step === "evaluate" ? EVAL_MSGS : IMPROV_MSGS;
+    const msgs = step === "search" ? shuffleArray(SEARCH_MSGS_POOL) : step === "evaluate" ? EVAL_MSGS : IMPROV_MSGS;
     setLoadMsgs(msgs);
     setLoadMsg(0);
     const id = setInterval(() => setLoadMsg(m => (m + 1) % msgs.length), 2200);
@@ -330,6 +342,13 @@ export default function BreasonApp() {
     const id = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(id);
   }, [toast]);
+
+  // Scroll output в видимую область на мобиле
+  const scrollToOutput = (ref: React.RefObject<HTMLDivElement | null>) => {
+    setTimeout(() => {
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
 
   const showToast  = (msg: string) => setToast(msg);
   const switchStep = (s: StepKey) => { setStep(s); setError(null); };
@@ -376,6 +395,7 @@ export default function BreasonApp() {
       if (!res.ok) { setError(data.error || "Ошибка сервера"); return; }
       if (!data.verdict) { setError("Неполный ответ ИИ. Попробуйте ещё раз."); return; }
       setEvalResult(data);
+      scrollToOutput(outputRefEval);
     } catch { setError("Ошибка сети. Попробуйте ещё раз."); }
     finally   { setLoading(false); }
   }, [evalText, market]);
@@ -388,10 +408,8 @@ export default function BreasonApp() {
       const res  = await fetch("/api/resonance-trends", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "improve",
-          text: src, market,
-          context: improveCtx,
-          preset: activePreset,
+          action: "improve", text: src, market,
+          context: improveCtx, preset: activePreset,
           trendName:    selectedTrend?.headline      || "",
           trendTension: selectedTrend?.business_impact || "",
         }),
@@ -400,6 +418,7 @@ export default function BreasonApp() {
       if (!res.ok) { setError(data.error || "Ошибка сервера"); return; }
       if (!data.improved_text) { setError("Неполный ответ ИИ. Попробуйте ещё раз."); return; }
       setImproveResult(data);
+      scrollToOutput(outputRefImprove);
     } catch { setError("Ошибка сети. Попробуйте ещё раз."); }
     finally   { setLoading(false); }
   }, [improveText, improveCtx, evalText, market, activePreset, selectedTrend]);
@@ -413,6 +432,8 @@ export default function BreasonApp() {
       </div>
     );
   };
+
+  // ── Step 1: Search ────────────────────────────────────────────────────────
 
   const renderSearch = () => (
     <div>
@@ -450,9 +471,12 @@ export default function BreasonApp() {
     </div>
   );
 
+  // ── Step 2: Evaluate ──────────────────────────────────────────────────────
+
   const renderEvaluate = () => (
     <div className="split">
-      <div className="card" style={{ position: "sticky", top: 60 }}>
+      {/* Форма — на мобиле идёт второй (order:2) */}
+      <div className="card split-form" style={{ position: "sticky", top: 60 }}>
         <div className="mode-tabs">
           <button className={`mode-tab ${inputMode === "text" ? "active" : ""}`} onClick={() => { setInputMode("text"); setUrlStatus(null); }}>✏️ Вставить текст</button>
           <button className={`mode-tab ${inputMode === "url" ? "active" : ""}`} onClick={() => setInputMode("url")}>🔗 По ссылке</button>
@@ -480,10 +504,12 @@ export default function BreasonApp() {
         </button>
         {evalResult && (<button className="btn-ghost" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => { setImproveText(evalText); switchStep("improve"); }}>◆ Улучшить этот текст →</button>)}
       </div>
-      <div>
+
+      {/* Output — на мобиле идёт первым (order:1) */}
+      <div className="split-output" ref={outputRefEval}>
         {loading && (<div className="loader"><div className="spinner" /><div className="loader-label">Аудит контента</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
         {!loading && error && <div className="error-box" style={{ marginBottom: 14 }}>⚠ {error}</div>}
-        {!loading && !evalResult && !error && (<div className="empty"><div className="empty-icon">◈</div><div className="empty-title">Готов к проверке</div><p className="empty-text">{inputMode === "url" ? "Вставьте ссылку, извлеките страницу и нажмите «Проверить»." : "Вставьте текст и нажмите «Проверить», чтобы выявить культурные ошибки."}</p></div>)}
+        {!loading && !evalResult && !error && (<div className="empty"><div className="empty-icon">◈</div><div className="empty-title">Готов к проверке</div><p className="empty-text">{inputMode === "url" ? "Вставьте ссылку, извлеките страницу и нажмите «Проверить»." : "Вставьте текст и нажмите «Проверить»."}</p></div>)}
         {!loading && evalResult && (() => {
           const vc = VERDICT_CFG[evalResult.verdict];
           return (
@@ -492,7 +518,11 @@ export default function BreasonApp() {
                 <div className="verdict-icon">{vc.icon}</div>
                 <div><div className="verdict-label">{evalResult.verdict} — {vc.label}</div><div className="verdict-reason">{evalResult.verdict_reason}</div></div>
               </div>
+              {evalResult.buyer_reaction && (
+                <div className="buyer-reaction">💬 {evalResult.buyer_reaction}</div>
+              )}
               {evalResult.trend_context && (<div className="ctx-box"><span className="ctx-icon">📡</span><span><strong>Сигнал рынка:</strong> {evalResult.trend_context}</span></div>)}
+              {evalResult.tone_gap && (<div className="ctx-box" style={{ background: "rgba(249,115,22,0.06)", borderColor: "rgba(249,115,22,0.2)" }}><span className="ctx-icon">🎯</span><span><strong>Тональный разрыв:</strong> {evalResult.tone_gap}</span></div>)}
               <div className="grid2">
                 <div className="card" style={{ margin: 0 }}>
                   <p className="field-label">Карта тона</p>
@@ -512,18 +542,24 @@ export default function BreasonApp() {
                   <div className="card" style={{ margin: 0 }}>
                     <p className="field-label">Отсутствующие сигналы доверия</p>
                     <ul className="trust-list">{evalResult.missing_trust_signals.map((s, i) => <li className="trust-item" key={i}><span>✕</span>{s}</li>)}</ul>
+                    {evalResult.missed_anchors && evalResult.missed_anchors.length > 0 && (
+                      <ul className="trust-list" style={{ marginTop: 8 }}>
+                        {evalResult.missed_anchors.map((a, i) => <li className="trust-item" key={i} style={{ borderLeftColor: "var(--orange)" }}><span>◎</span>{a}</li>)}
+                      </ul>
+                    )}
                   </div>
                 </div>
               </div>
               <div>
                 <div className="row" style={{ marginBottom: 12, justifyContent: "space-between" }}>
                   <span style={{ fontSize: 14, fontWeight: 700 }}>Предлагаемые правки</span>
-                  <button className="btn-ghost" onClick={() => copyText(evalResult.brief_text, "Бриф скопирован!")}>📋 Скопировать бриф</button>
+                  <button className="btn-ghost" onClick={() => copyText(evalResult.brief_local || evalResult.brief_text, "Бриф скопирован!")}>📋 Скопировать бриф</button>
                 </div>
                 <div className="stack">
                   {evalResult.rewrites.map((rw, i) => (
                     <div className="rw-card" key={i}>
                       <div className="rw-tag">{rw.block}</div>
+                      {rw.problem && <div style={{ fontSize: 12, color: "#C2410C", background: "rgba(249,115,22,0.06)", padding: "6px 10px", borderRadius: 6, marginBottom: 10 }}>⚠ {rw.problem}</div>}
                       <div className="rw-cols">
                         <div><div className="rw-col-label">Оригинал</div><div className="rw-block">{rw.original}</div></div>
                         <div>
@@ -544,9 +580,12 @@ export default function BreasonApp() {
     </div>
   );
 
+  // ── Step 3: Improve ───────────────────────────────────────────────────────
+
   const renderImprove = () => (
     <div className="split">
-      <div className="card" style={{ position: "sticky", top: 60 }}>
+      {/* Форма — на мобиле order:2 */}
+      <div className="card split-form" style={{ position: "sticky", top: 60 }}>
         {selectedTrend && (
           <div style={{ marginBottom: 14, padding: "10px 14px", background: "var(--violet-a)", borderRadius: "var(--r-sm)", border: "1px solid rgba(124,58,237,0.2)" }}>
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px", color: "var(--violet)", marginBottom: 4 }}>Тренд из поиска</div>
@@ -572,7 +611,9 @@ export default function BreasonApp() {
           {loading ? <><span className="spinner-sm" /> Переписываю...</> : `◆ Применить — ${MARKETS[market].flag} ${MARKETS[market].labelRu}`}
         </button>
       </div>
-      <div>
+
+      {/* Output — на мобиле order:1 */}
+      <div className="split-output" ref={outputRefImprove}>
         {loading && (<div className="loader"><div className="spinner" /><div className="loader-label">Переписываю для {MARKETS[market].labelRu}</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
         {!loading && error && <div className="error-box" style={{ marginBottom: 14 }}>⚠ {error}</div>}
         {!loading && !improveResult && !error && (<div className="empty"><div className="empty-icon">◆</div><div className="empty-title">Готов к улучшению</div><p className="empty-text">Текст будет переписан под {MARKETS[market].labelRu}: нативный тон, правильные сигналы доверия, локальный CTA.</p></div>)}
@@ -600,6 +641,8 @@ export default function BreasonApp() {
       </div>
     </div>
   );
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="shell">
