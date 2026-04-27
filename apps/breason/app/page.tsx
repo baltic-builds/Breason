@@ -40,31 +40,39 @@ interface UrlStatus {
 // ── Константы ─────────────────────────────────────────────────────────────────
 
 const MARKETS: Record<MarketKey, { labelRu: string; flag: string; flagCdn: string | null; desc: string }> = {
-  germany: { labelRu: "Германия", flag: "🇩🇪", flagCdn: "de", desc: "Формальный · Точный · Процессный"      },
-  poland:  { labelRu: "Польша",   flag: "🇵🇱", flagCdn: "pl", desc: "Прямой · Фактический · Прозрачный"     },
-  brazil:  { labelRu: "Бразилия", flag: "🇧🇷", flagCdn: "br", desc: "Тёплый · Человечный · Доверительный"   },
-  latam:   { labelRu: "LATAM",    flag: "🌎",  flagCdn: null, desc: "Энергичный · Рост · Испаноязычный"     },
-  com:     { labelRu: "COM",      flag: "🌐",  flagCdn: null, desc: "Уверенный · Data-driven · ROI-focused" },
+  germany: { labelRu: "Германия", flag: "🇩🇪", flagCdn: "de", desc: "Строгость · Данные · Доверие"            },
+  poland:  { labelRu: "Польша",   flag: "🇵🇱", flagCdn: "pl", desc: "Конкретность · ROI · Без воды"          },
+  brazil:  { labelRu: "Бразилия", flag: "🇧🇷", flagCdn: "br", desc: "Отношения · Тепло · Португальский"      },
+  latam:   { labelRu: "LATAM",    flag: "🌎",  flagCdn: null, desc: "Рост · Испанский · Личный контакт"      },
+  com:     { labelRu: "COM",      flag: "🌐",  flagCdn: null, desc: "Результат · Данные · Прямолинейность"   },
 };
 
-// Кросс-платформенный флаг:
-// - Для страновых флагов: img из flagcdn.com (решает проблему Windows Chrome/Edge)
-// - Для региональных (LATAM🌎, COM🌐): эмодзи — они рендерятся везде корректно
-// - onError fallback гарантирует показ эмодзи если CDN недоступен
-const FlagImg = ({ code, emoji, size = 28 }: { code: string | null; emoji: string; size?: number }) => {
-  if (!code) {
-    // Региональные эмодзи (🌎 🌐) рендерятся корректно на всех платформах
-    return <span style={{ fontSize: size, lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>{emoji}</span>;
-  }
+// Флаги: единый span-рендер для всех рынков.
+// Эмодзи-флаги корректно отображаются на iOS, Android, macOS.
+// На Windows эмодзи-флаги не работают в системе — используем text-based SVG через Twemoji CDN.
+// Twemoji превращает любой эмодзи в SVG-картинку которая одинакова на всех платформах.
+const FlagImg = ({ emoji, size = 28 }: { code: string | null; emoji: string; size?: number }) => {
+  // Конвертируем эмодзи в codepoint для Twemoji CDN
+  const getCodepoint = (e: string): string => {
+    const codes: string[] = [];
+    for (let i = 0; i < e.length; ) {
+      const cp = e.codePointAt(i)!;
+      codes.push(cp.toString(16));
+      i += cp > 0xffff ? 2 : 1;
+    }
+    return codes.filter(c => c !== 'fe0f').join('-');
+  };
+  const cp = getCodepoint(emoji);
+  const src = `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/${cp}.svg`;
   return (
     <img
-      src={`https://flagcdn.com/w${Math.max(size * 2, 40)}/${code}.png`}
-      srcSet={`https://flagcdn.com/w${Math.max(size * 4, 80)}/${code}.png 2x`}
-      width={size}
-      height={Math.round(size * 0.75)}
+      src={src}
       alt={emoji}
-      style={{ objectFit: "cover", borderRadius: 2, display: "inline-block", verticalAlign: "middle" }}
+      width={size}
+      height={size}
+      style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}
       onError={(e) => {
+        // Если Twemoji CDN недоступен — показываем эмодзи напрямую
         const el = e.currentTarget as HTMLImageElement;
         el.outerHTML = `<span style="font-size:${size}px;line-height:1;display:inline-block;vertical-align:middle">${emoji}</span>`;
       }}
@@ -73,27 +81,27 @@ const FlagImg = ({ code, emoji, size = 28 }: { code: string | null; emoji: strin
 };
 
 const STEPS: Record<StepKey, { num: string; label: string }> = {
-  search:   { num: "01", label: "Поиск"     },
-  evaluate: { num: "02", label: "Проверка"  },
+  search:   { num: "01", label: "Тренды"     },
+  evaluate: { num: "02", label: "Аудит"  },
   improve:  { num: "03", label: "Улучшение" },
 };
 
 const VERDICT_CFG: Record<VerdictType, { color: string; bg: string; border: string; icon: string; label: string }> = {
-  PASS:       { color: "#3F6212", bg: "rgba(132,204,22,0.08)", border: "rgba(132,204,22,0.3)", icon: "✓", label: "Звучит локально"   },
-  SUSPICIOUS: { color: "#C2410C", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.3)", icon: "⚠", label: "Звучит как импорт" },
-  FOREIGN:    { color: "#BE123C", bg: "rgba(225,29,72,0.08)",  border: "rgba(225,29,72,0.3)",  icon: "✕", label: "Звучит чужеродно"  },
+  PASS:       { color: "#3F6212", bg: "rgba(132,204,22,0.08)", border: "rgba(132,204,22,0.3)", icon: "✓", label: "Нативно для рынка"   },
+  SUSPICIOUS: { color: "#C2410C", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.3)", icon: "⚠", label: "Похоже на перевод" },
+  FOREIGN:    { color: "#BE123C", bg: "rgba(225,29,72,0.08)",  border: "rgba(225,29,72,0.3)",  icon: "✕", label: "Чужеродный текст"  },
 };
 
 const DEFAULT_COPY = `Unlock efficiency with our all-in-one AI platform. It's a revolutionary game-changer for your enterprise. Start your free trial today and 10x your productivity seamlessly!`;
 
 const PRESETS = [
-  { id: "zero_click",     icon: "🕳️", label: "Пост без перехода",       desc: "Удержание в ленте без ссылки"        },
-  { id: "anti_ai",        icon: "📱", label: "«На бегу»",                desc: "Живой текст, не похожий на ИИ"       },
-  { id: "strong_pov",     icon: "🔥", label: "Провокационное мнение",    desc: "Позиция, с которой хочется спорить"  },
-  { id: "thread_starter", icon: "🧵", label: "Виральный тред",           desc: "Тред из 5 частей для соцсетей"       },
-  { id: "re_engage",      icon: "♻️", label: "Реанимация лидов",         desc: "Пишем лидам «не сейчас»"             },
-  { id: "data_story",     icon: "📊", label: "История с данными",        desc: "Аналитический пост — 3x репостов"    },
-  { id: "community_drop", icon: "🫂", label: "Пост в комьюнити",         desc: "Органичный обмен опытом без рекламы" },
+  { id: "zero_click",     icon: "🕳️", label: "Пост без перехода",       desc: "Вся ценность внутри поста"        },
+  { id: "anti_ai",        icon: "📱", label: "«На бегу»",                desc: "Пишем как человек, не как робот"       },
+  { id: "strong_pov",     icon: "🔥", label: "Провокационное мнение",    desc: "Острое мнение, которое запомнят"  },
+  { id: "thread_starter", icon: "🧵", label: "Виральный тред",           desc: "5 постов — один виральный нарратив"       },
+  { id: "re_engage",      icon: "♻️", label: "Реанимация лидов",         desc: "Возобновляем диалог с холодной базой"             },
+  { id: "data_story",     icon: "📊", label: "История с данными",        desc: "Цифры + инсайт = доверие и охват"    },
+  { id: "community_drop", icon: "🫂", label: "Пост в комьюнити",         desc: "Нативно в закрытые профессиональные группы" },
 ] as const;
 
 type PresetId = typeof PRESETS[number]["id"];
@@ -104,7 +112,7 @@ const SEARCH_MSGS_POOL = [
   "Идём к гадалке...", "Раскладываем карты Таро...", "Гадаем на кофейной гуще...",
   "Читаем Bloomberg...", "Подкупаем бухгалтеров...",
 ];
-const EVAL_MSGS   = ["Анализирую тон и культуру...", "Проверяю сигналы доверия...", "Ищу клише...", "Генерирую правки..."];
+const EVAL_MSGS   = ["Анализирую тон и культуру...", "Проверяю сигналы доверия...", "Считаю индекс клише...", "Формирую правки..."];
 const IMPROV_MSGS = ["Читаю профиль рынка...", "Переписываю под аудиторию...", "Полирую нативный тон..."];
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -162,7 +170,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-reset:hover{background:var(--bg);color:var(--t2)}
 
 /* ── Page ── */
-.page{flex:1;padding:28px 28px 40px;max-width:1100px;width:100%;margin:0 auto}
+.page{flex:1;padding:28px 28px 40px;max-width:1100px;width:100%;margin:0 auto;background:var(--bg)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
 .field-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--t3);margin-bottom:10px}
 
@@ -204,6 +212,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 
 /* ── Layout ── */
 .split{display:grid;gap:24px;grid-template-columns:340px 1fr;align-items:start}
+.split-output{background:var(--surface);border-radius:var(--r);padding:4px;min-height:200px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .stack{display:flex;flex-direction:column;gap:14px}
 .row{display:flex;align-items:center;gap:12px}
@@ -392,7 +401,7 @@ export default function BreasonApp() {
       const data = await res.json();
       if (!res.ok || data.error) { setUrlStatus({ type: "error", message: data.error || "Не удалось загрузить URL" }); return; }
       setEvalText(data.text);
-      setUrlStatus({ type: "success", message: "Содержимое успешно извлечено", domain: data.domain, charCount: data.charCount, truncated: data.truncated });
+      setUrlStatus({ type: "success", message: "Текст страницы получен", domain: data.domain, charCount: data.charCount, truncated: data.truncated });
     } catch { setUrlStatus({ type: "error", message: "Ошибка сети. Проверьте соединение." }); }
     finally   { setUrlLoading(false); }
   }, [urlInput]);
@@ -472,7 +481,7 @@ export default function BreasonApp() {
         ))}
       </div>
       <button className="btn-search" onClick={handleSearch} disabled={loading}>
-        {loading ? <><span className="spinner-sm" /> Сканирую рынок...</> : <>◎ Найти тренды — {MARKETS[market].labelRu} <FlagImg code={MARKETS[market].flagCdn} emoji={MARKETS[market].flag} size={16} /></>}
+        {loading ? <><span className="spinner-sm" /> Ищу тренды...</> : <>◎ Тренды рынка — {MARKETS[market].labelRu} <FlagImg code={MARKETS[market].flagCdn} emoji={MARKETS[market].flag} size={16} /></>}
       </button>
       {loading && (<div className="loader" style={{ marginTop: 24 }}><div className="spinner" /><div className="loader-label">Формирую дайджест</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
       {!loading && error && <div className="error-box" style={{ marginTop: 20 }}>⚠ {error}</div>}
@@ -488,7 +497,7 @@ export default function BreasonApp() {
               <div className="news-headline">{item.headline}</div>
               <div className="news-summary">{item.summary}</div>
               <div className="news-impact"><div className="news-impact-label">Влияние на B2B</div>{item.business_impact}</div>
-              <button className="news-card-use" onClick={() => { setSelectedTrend(item); setImproveText(""); setImproveCtx(item.headline); switchStep("improve"); }}>◆ Улучшить текст под этот тренд →</button>
+              <button className="news-card-use" onClick={() => { setSelectedTrend(item); setImproveText(""); setImproveCtx(item.headline); switchStep("improve"); }}>◆ Использовать этот тренд →</button>
             </div>
           ))}
         </div>
@@ -514,27 +523,27 @@ export default function BreasonApp() {
               <input className="url-inp" type="url" value={urlInput} onChange={e => { setUrlInput(e.target.value); setUrlStatus(null); }} onKeyDown={e => e.key === "Enter" && handleFetchUrl()} placeholder="https://example.com/страница" />
             </div>
             <button className="btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={handleFetchUrl} disabled={urlLoading || !urlInput.trim()}>
-              {urlLoading ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Извлекаю...</> : "Извлечь содержимое →"}
+              {urlLoading ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Извлекаю...</> : "Загрузить страницу →"}
             </button>
             {urlStatus && <div className={`url-status ${urlStatus.type}`}>{urlStatus.type === "success" ? "✓" : "⚠"} {urlStatus.message}</div>}
             {urlStatus?.type === "success" && (<div className="url-meta"><span className="url-meta-domain">📄 {urlStatus.domain}</span><span className="url-meta-chars">{urlStatus.charCount?.toLocaleString()} симв.{urlStatus.truncated ? " (обрезано)" : ""}</span></div>)}
-            {!urlStatus && !urlLoading && <p className="url-hint">Работает с открытыми страницами. Сайты с авторизацией могут не загрузиться — вставьте текст вручную.</p>}
+            {!urlStatus && !urlLoading && <p className="url-hint">Работает с публичными страницами. Сайты с логином или на React могут не открыться — вставьте текст вручную.</p>}
             {urlStatus?.type === "success" && evalText && (<><p className="field-label" style={{ marginTop: 12 }}>Предпросмотр</p><div className="preview-box">{evalText.slice(0, 280)}...<div className="preview-fade" /></div></>)}
           </div>
         )}
-        {inputMode === "text" && (<><p className="field-label">Ваш маркетинговый текст</p><textarea className="inp" rows={9} value={evalText} onChange={e => setEvalText(e.target.value)} placeholder="Вставьте текст: заголовок, email, лендинг, CTA..." /></>)}
+        {inputMode === "text" && (<><p className="field-label">Ваш маркетинговый текст</p><textarea className="inp" rows={9} value={evalText} onChange={e => setEvalText(e.target.value)} placeholder="Вставьте текст: заголовок, письмо, лендинг, призыв к действию..." /></>)}
         {inputMode === "url" && urlStatus?.type === "success" && (<><p className="field-label" style={{ marginTop: 8 }}>Редактировать перед анализом</p><textarea className="inp" rows={4} value={evalText} onChange={e => setEvalText(e.target.value)} /></>)}
         <button className="btn-primary" onClick={handleEvaluate} disabled={loading || !evalText.trim() || urlLoading}>
           {loading ? <><span className="spinner-sm" /> Проверяю...</> : <>◈ Проверить для <FlagImg code={MARKETS[market].flagCdn} emoji={MARKETS[market].flag} size={14} /> {MARKETS[market].labelRu}</>}
         </button>
-        {evalResult && (<button className="btn-ghost" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => { setImproveText(evalText); switchStep("improve"); }}>◆ Улучшить этот текст →</button>)}
+        {evalResult && (<button className="btn-ghost" style={{ marginTop: 10, width: "100%", justifyContent: "center" }} onClick={() => { setImproveText(evalText); switchStep("improve"); }}>◆ Улучшить с этими правками →</button>)}
       </div>
 
       {/* Output — на мобиле идёт первым (order:1) */}
       <div className="split-output" ref={outputRefEval}>
         {loading && (<div className="loader"><div className="spinner" /><div className="loader-label">Аудит контента</div><div className="loader-msg">{loadMsgs[loadMsg] || ""}</div></div>)}
         {!loading && error && <div className="error-box" style={{ marginBottom: 14 }}>⚠ {error}</div>}
-        {!loading && !evalResult && !error && (<div className="empty"><div className="empty-icon">◈</div><div className="empty-title">Готов к проверке</div><p className="empty-text">{inputMode === "url" ? "Вставьте ссылку, извлеките страницу и нажмите «Проверить»." : "Вставьте текст и нажмите «Проверить»."}</p></div>)}
+        {!loading && !evalResult && !error && (<div className="empty"><div className="empty-icon">◈</div><div className="empty-title">Готов к проверке</div><p className="empty-text">{inputMode === "url" ? "Вставьте ссылку, извлеките страницу и нажмите «Проверить»." : "Вставьте текст или ссылку — и нажмите «Проверить»."}</p></div>)}
         {!loading && evalResult && (() => {
           const vc = VERDICT_CFG[evalResult.verdict];
           return (
@@ -555,13 +564,13 @@ export default function BreasonApp() {
                   {renderToneBar("Дерзкий",     "Осторожный",   evalResult.tone_map.bold_cautious)}
                   {renderToneBar("Технический", "Про пользу",   evalResult.tone_map.technical_benefit)}
                   {renderToneBar("Абстрактный", "Конкретный",   evalResult.tone_map.abstract_concrete)}
-                  {renderToneBar("Переведённый","Нативный",     evalResult.tone_map.global_native)}
+                  {renderToneBar("Переводной","Нативный",     evalResult.tone_map.global_native)}
                 </div>
                 <div className="stack">
                   <div className="card" style={{ margin: 0 }}>
                     <p className="field-label">Индекс шаблонности</p>
                     <div className="score-big" style={{ color: scoreColor(evalResult.genericness_score) }}>{evalResult.genericness_score}<span style={{ fontSize: 15, color: "var(--t3)", fontWeight: 400 }}>/100</span></div>
-                    <p className="score-sub">{evalResult.genericness_score < 35 ? "Оригинально и локально" : evalResult.genericness_score < 65 ? "Типичный SaaS-голос" : "Чистые US-клише"}</p>
+                    <p className="score-sub">{evalResult.genericness_score < 35 ? "Оригинально — звучит по-местному" : evalResult.genericness_score < 65 ? "Типичный SaaS-язык" : "Американские клише"}</p>
                     <div className="badge-row">{evalResult.generic_phrases.map((p, i) => <span className="badge" key={i}>«{p}»</span>)}</div>
                   </div>
                   <div className="card" style={{ margin: 0 }}>
@@ -578,7 +587,7 @@ export default function BreasonApp() {
               <div>
                 <div className="row" style={{ marginBottom: 12, justifyContent: "space-between" }}>
                   <span style={{ fontSize: 14, fontWeight: 700 }}>Предлагаемые правки</span>
-                  <button className="btn-ghost" onClick={() => copyText(evalResult.brief_local || evalResult.brief_text, "Бриф скопирован!")}>📋 Скопировать бриф</button>
+                  <button className="btn-ghost" onClick={() => copyText(evalResult.brief_local || evalResult.brief_text, "Бриф скопирован")}>📋 Скопировать бриф</button>
                 </div>
                 <div className="stack">
                   {evalResult.rewrites.map((rw, i) => (
@@ -629,9 +638,9 @@ export default function BreasonApp() {
           ))}
         </div>
         <p className="field-label">Текст для улучшения</p>
-        <textarea className="inp" rows={7} value={improveText || evalText} onChange={e => setImproveText(e.target.value)} placeholder="Вставьте текст или он перенесётся из «Проверки»..." />
+        <textarea className="inp" rows={7} value={improveText || evalText} onChange={e => setImproveText(e.target.value)} placeholder="Вставьте текст для переработки..." />
         <p className="field-label" style={{ marginTop: 14 }}>Контекст (необязательно)</p>
-        <textarea className="inp" rows={2} value={improveCtx} onChange={e => setImproveCtx(e.target.value)} placeholder="Тренд рынка, позиционирование, целевая персона..." />
+        <textarea className="inp" rows={2} value={improveCtx} onChange={e => setImproveCtx(e.target.value)} placeholder="Тренд, продукт, аудитория — в 1-2 предложения..." />
         <button className="btn-primary" onClick={handleImprove} disabled={loading || !(improveText.trim() || evalText.trim())}>
           {loading ? <><span className="spinner-sm" /> Переписываю...</> : <>◆ Применить — <FlagImg code={MARKETS[market].flagCdn} emoji={MARKETS[market].flag} size={14} /> {MARKETS[market].labelRu}</>}
         </button>
@@ -649,7 +658,7 @@ export default function BreasonApp() {
               <div className="improve-tabs">
                 <button className={`improve-tab ${improveTab === "local" ? "active" : ""}`} onClick={() => setImproveTab("local")}><FlagImg code={MARKETS[market].flagCdn} emoji={MARKETS[market].flag} size={14} /> Локальная версия</button>
                 <button className={`improve-tab ${improveTab === "en" ? "active" : ""}`} onClick={() => setImproveTab("en")}>English</button>
-                <button className="btn-ghost" style={{ marginLeft: "auto" }} onClick={() => copyText(improveTab === "local" ? improveResult.improved_local : improveResult.improved_text, "Текст скопирован!")}>📋 Скопировать</button>
+                <button className="btn-ghost" style={{ marginLeft: "auto" }} onClick={() => copyText(improveTab === "local" ? improveResult.improved_local : improveResult.improved_text, "Скопировано")}>📋 Скопировать</button>
               </div>
               <div className="improve-body">{improveTab === "local" ? improveResult.improved_local : improveResult.improved_text}</div>
             </div>
@@ -682,7 +691,7 @@ export default function BreasonApp() {
             </button>
           ))}
         </nav>
-        <div className="sb-footer">Breason v2.0<br /><span style={{ opacity: 0.5 }}>Не перевод. Резонанс.</span></div>
+        <div className="sb-footer">Breason v2.0<br /><span style={{ opacity: 0.5 }}>Не перевод — резонанс.</span></div>
       </aside>
       <div className="main">
         <header className="topbar">
@@ -694,7 +703,7 @@ export default function BreasonApp() {
             ))}
           </div>
           <div className="topbar-market"><FlagImg code={MARKETS[market].flagCdn} emoji={MARKETS[market].flag} size={16} /> {MARKETS[market].labelRu}</div>
-          {(evalResult || improveResult || newsItems) && <button className="btn-reset" onClick={resetAll}>↺ Сбросить</button>}
+          {(evalResult || improveResult || newsItems) && <button className="btn-reset" onClick={resetAll}>↺ Начать заново</button>}
         </header>
         <main className="page">
           {step === "search"   && renderSearch()}
