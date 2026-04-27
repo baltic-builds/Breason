@@ -473,7 +473,7 @@ interface PresetConfig {
 
 const IMPROVE_PRESETS: Record<string, PresetConfig> = {
   zero_click: {
-    label: "Zero-Click Пост", icon: "🕳️", desc: "Удержание в ленте без перехода по ссылке",
+    label: "Пост без перехода", icon: "🕳️", desc: "Вся ценность внутри поста",
     buildPrompt: (text, market, trendName, trendTension) => {
       const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
       const hint = MARKET_HINTS[market]?.zero_click || "";
@@ -502,7 +502,7 @@ ${JSON_TAIL(p.language, p.labelRu)}`.trim();
   },
 
   anti_ai: {
-    label: "Anti-AI", icon: "📱", desc: "Живой текст, написанный «на бегу»",
+    label: "«На бегу»", icon: "📱", desc: "Пишем как человек, не как робот",
     buildPrompt: (text, market, trendName) => {
       const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
       const hint = MARKET_HINTS[market]?.anti_ai || "";
@@ -613,7 +613,7 @@ ${JSON_TAIL(p.language, p.labelRu)}`.trim();
   },
 
   data_story: {
-    label: "Data Story", icon: "📊", desc: "Инсайт на основе данных — в три раза больше репостов",
+    label: "История с данными", icon: "📊", desc: "Инсайт на основе данных — в три раза больше репостов",
     buildPrompt: (text, market, trendName, trendTension) => {
       const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
       const hint = MARKET_HINTS[market]?.data_story || "";
@@ -641,7 +641,7 @@ ${JSON_TAIL(p.language, p.labelRu)}`.trim();
   },
 
   community_drop: {
-    label: "Community Drop", icon: "🫂", desc: "Пост в закрытое сообщество — без рекламы",
+    label: "Пост в комьюнити", icon: "🫂", desc: "Пост в закрытое сообщество — без рекламы",
     buildPrompt: (text, market, trendName, trendTension) => {
       const p = MARKET_PROFILES[market] || MARKET_PROFILES.germany;
       const hint = MARKET_HINTS[market]?.community || "";
