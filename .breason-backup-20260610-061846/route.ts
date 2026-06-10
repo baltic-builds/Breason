@@ -1,8 +1,55 @@
 import { NextResponse } from 'next/server';
-import { callFreeAiJson } from "@breason/shared";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const OPENROUTER_MODEL = "google/gemini-2.0-flash-lite-preview-02-05:free";
+
+// ── Авто-выбор модели Gemini ──────────────────────────────────────────────────
+let cachedGeminiModel: string | null = null;
+
+async function getBestGeminiModel(): Promise<string> {
+  if (cachedGeminiModel) return cachedGeminiModel;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) throw new Error(`ListModels ${res.status}`);
+    const data = await res.json();
+    const models: { name: string; supportedGenerationMethods?: string[] }[] = data.models || [];
+    const flashModels = models
+      .filter(m =>
+        m.name.includes('flash') &&
+        !m.name.includes('thinking') &&
+        (m.supportedGenerationMethods || []).includes('generateContent')
+      )
+      .map(m => m.name.replace('models/', ''))
+      .sort((a, b) => {
+        const parseVer = (s: string) => {
+          const match = s.match(/gemini-(\d+)\.?(\d*)/);
+          if (!match) return [0, 0];
+          return [parseInt(match[1] || '0'), parseInt(match[2] || '0')];
+        };
+        const [aMaj, aMin] = parseVer(a);
+        const [bMaj, bMin] = parseVer(b);
+        return bMaj !== aMaj ? bMaj - aMaj : bMin - aMin;
+      });
+    const bestModel = flashModels.find(m => m.includes('lite')) || flashModels[0];
+    if (!bestModel) throw new Error("No suitable flash model found");
+    console.log(`✅ Gemini model selected: ${bestModel}`);
+    cachedGeminiModel = bestModel;
+    return bestModel;
+  } catch (e: any) {
+    const fallback = process.env.GEMINI_MODEL || "gemini-2.0-flash-lite";
+    console.warn(`⚠️ ListModels failed (${e.message}), fallback: ${fallback}`);
+    cachedGeminiModel = fallback;
+    return fallback;
+  }
+}
 
 // ── Утилиты ───────────────────────────────────────────────────────────────────
 
@@ -149,8 +196,69 @@ function formatNewsForPrompt(news: SerperNewsItem[]): string {
   ).join("\n\n");
 }
 
+// ── AI fallbacks ──────────────────────────────────────────────────────────────
+async function groqFallback(prompt: string): Promise<string> {
+  if (!process.env.GROQ_API_KEY) throw new Error("No GROQ_API_KEY");
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: GROQ_MODEL, messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } }),
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}`);
+  return (await res.json()).choices[0].message.content;
+}
+
+async function openRouterFallback(prompt: string): Promise<any> {
+  if (!process.env.OPENROUTER_API_KEY) throw new Error("No OPENROUTER_API_KEY");
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json", "HTTP-Referer": "https://breason.vercel.app" },
+    body: JSON.stringify({ model: OPENROUTER_MODEL, messages: [{ role: "user", content: prompt }] }),
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!res.ok) throw new Error(`OpenRouter ${res.status}`);
+  return parseJson((await res.json()).choices[0].message.content);
+}
+
 async function callAI(prompt: string): Promise<any> {
-  return callFreeAiJson(prompt);
+  try {
+    const modelName = await getBestGeminiModel();
+    console.log(`🤖 Trying Gemini: ${modelName}`);
+    const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Gemini timeout 20s")), 20000))
+    ]);
+    const parsed = parseJson(result.response.text());
+    console.log(`✅ Gemini success: ${modelName}`);
+    return parsed;
+  } catch (e: any) {
+    const msg = e.message || "";
+    if (msg.includes('404') || msg.includes('not found') || msg.includes('does not exist')) {
+      cachedGeminiModel = null;
+      console.warn(`⚠️ Gemini model not found, cache cleared: ${msg}`);
+    } else {
+      console.warn(`⚠️ Gemini failed: ${msg}`);
+    }
+  }
+  try {
+    console.log(`🔄 Trying Groq: ${GROQ_MODEL}`);
+    const parsed = parseJson(await groqFallback(prompt));
+    console.log(`✅ Groq success`);
+    return parsed;
+  } catch (e: any) {
+    console.warn(`⚠️ Groq failed: ${e.message}`);
+  }
+  try {
+    console.log(`🔄 Trying OpenRouter: ${OPENROUTER_MODEL}`);
+    const parsed = await openRouterFallback(prompt);
+    console.log(`✅ OpenRouter success`);
+    return parsed;
+  } catch (e: any) {
+    console.warn(`⚠️ OpenRouter failed: ${e.message}`);
+  }
+  throw new Error("Все AI-провайдеры недоступны");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

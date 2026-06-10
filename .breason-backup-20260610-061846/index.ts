@@ -3,7 +3,6 @@ import "server-only";
 
 // Правильные экспорты без .js расширения
 export * from "./ai";
-export * from "./ai-pipeline";
 export * from "./logger";
 export * from "./domain";
 

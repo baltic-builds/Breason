@@ -1,4 +1,4 @@
-export type AIProvider = 'gemini' | 'gemini-2.5-flash' | 'gemini-3.1-flash-lite' | 'groq' | 'groq-qwen3-32b' | 'groq-llama-3.3-70b-versatile' | 'groq-compound' | 'openai' | 'openai-official-free' | 'openrouter' | 'openrouter-gpt-oss-120b' | 'anthropic' | 'local';
+export type AIProvider = 'gemini' | 'groq' | 'openai' | 'anthropic' | 'local';
 
 export interface AIResponseMeta {
   provider: AIProvider;
@@ -41,11 +41,3 @@ export interface FeatureFlags {
   reDuckEnabled: boolean;
   analyzeEnabled: boolean;
 }
-
-export interface ResonanceTrend {
-  title: string;
-  resonanceScore: number;
-  marketTension: string;
-  insight: string;
-}
-
