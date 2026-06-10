@@ -150,7 +150,7 @@ async function callOpenAiOfficial({ apiKey, model, prompt, maxOutputTokens, time
     throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 800)}`);
   }
 
-  const json = await response.json();
+  const json = await response.json() as any;
   const text = firstTextFromOpenAiResponses(json);
   if (!text) throw new Error("OpenAI returned an empty response");
   return {
@@ -181,7 +181,7 @@ async function callGemini({ apiKey, model, prompt, maxOutputTokens, timeoutMs }:
     throw new Error(`Gemini ${response.status}: ${(await response.text()).slice(0, 800)}`);
   }
 
-  const json = await response.json();
+  const json = await response.json() as any;
   const text = json?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text ?? "").join("").trim() ?? "";
   if (!text) throw new Error("Gemini returned an empty response");
   return {
@@ -215,7 +215,7 @@ async function callGroq({ apiKey, model, prompt, maxOutputTokens, timeoutMs }: P
     throw new Error(`Groq ${response.status}: ${(await response.text()).slice(0, 800)}`);
   }
 
-  const json = await response.json();
+  const json = await response.json() as any;
   const text = json?.choices?.[0]?.message?.content?.trim() ?? "";
   if (!text) throw new Error(`Groq ${model} returned an empty response`);
   return {
@@ -250,7 +250,7 @@ async function callOpenRouter({ apiKey, model, prompt, maxOutputTokens, timeoutM
     throw new Error(`OpenRouter ${response.status}: ${(await response.text()).slice(0, 800)}`);
   }
 
-  const json = await response.json();
+  const json = await response.json() as any;
   const text = json?.choices?.[0]?.message?.content?.trim() ?? "";
   if (!text) throw new Error(`OpenRouter ${model} returned an empty response`);
   return {
@@ -322,7 +322,7 @@ function providerCanRun(provider: ProviderConfig, prompt: string): boolean {
   return true;
 }
 
-export async function callFreeAi(prompt: string, requestId = crypto.randomUUID()): Promise<AiTextResult> {
+export async function callFreeAi(prompt: string, requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`): Promise<AiTextResult> {
   const errors: Array<{ provider: string; message: string }> = [];
 
   for (const provider of PROVIDERS) {
@@ -349,10 +349,10 @@ export async function callFreeAi(prompt: string, requestId = crypto.randomUUID()
       if (provider.id === "openai-official-free") recordOpenAiEstimate(prompt, result.tokensUsed);
       logger.aiCall({ provider: provider.id, promptVersion: "resonance-trends", latencyMs, success: true, tokensUsed: result.tokensUsed, requestId });
       return { ...result, latencyMs };
-    } catch (error: any) {
+    } catch (error: unknown) {
       const latencyMs = Date.now() - startedAt;
       recordFailure(provider.id);
-      errors.push({ provider: provider.id, message: error?.message ?? String(error) });
+      errors.push({ provider: provider.id, message: error instanceof Error ? error.message : String(error) });
       logger.error("ai.provider.failed", error, { provider: provider.id, latencyMs, requestId });
     }
   }

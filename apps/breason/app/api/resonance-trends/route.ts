@@ -733,7 +733,7 @@ const FOREIGN_REPLACEMENTS: [RegExp, string][] = [
   [/GmbH/g, "ООО"],
   [/giełda/gi, "биржа"],
   [/Receita Federal/gi, "Налоговая служба Бразилии"],
-  [/startups?/gi, (m: string) => m.endsWith("s") ? "стартапы" : "стартап"],
+  [/startups/gi, "стартапы"],
   [/fintech/gi, "финтех"],
   [/edtech/gi, "образовательные технологии"],
   [/healthtech/gi, "медицинские технологии"],
@@ -831,6 +831,6 @@ export async function POST(request: Request) {
   }
 }
 
-export const PRESETS_META = Object.entries(IMPROVE_PRESETS).map(([id, p]) => ({
+const PRESETS_META = Object.entries(IMPROVE_PRESETS).map(([id, p]) => ({
   id, label: p.label, icon: p.icon, desc: p.desc,
 }));

@@ -1,4 +1,4 @@
-import type { LogEntry, LogLevel, AIProvider } from "@breason/types";
+import type { LogEntry, LogLevel } from "@breason/types";
 
 // Structured JSON logger — works with Vercel Logs, stdout, and can be
 // wired to Sentry via the SENTRY_DSN env var (future integration point).
@@ -47,7 +47,7 @@ export const logger = {
   },
 
   aiCall: (opts: {
-    provider: AIProvider;
+    provider: string;
     promptVersion: string;
     latencyMs: number;
     success: boolean;

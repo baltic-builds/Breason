@@ -1,3 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(pwd)"
+TYPES_FILE="$ROOT/packages/types/src/index.ts"
+
+if [ ! -f "$TYPES_FILE" ]; then
+  echo "Cannot find $TYPES_FILE. Run this from the repository root." >&2
+  exit 1
+fi
+
+cp "$TYPES_FILE" "$TYPES_FILE.bak.$(date +%Y%m%d%H%M%S)"
+
+cat > "$TYPES_FILE" <<'TS'
 // packages/types/src/index.ts
 // Shared public contracts used across apps, prompts, and shared runtime.
 // Keep these types intentionally permissive where legacy shared code returns
@@ -109,3 +123,6 @@ export interface ResonanceGenerateResponse extends AIResponseMeta {
   meta?: AIResponseMeta;
   [key: string]: unknown;
 }
+TS
+
+npm run type-check

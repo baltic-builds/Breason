@@ -1,4 +1,5 @@
-import type { MarketKey, CustomPrompts, PromptKey } from "@breason/types";
+import type {
+  ResonanceTrend, MarketKey, CustomPrompts, PromptKey } from "@breason/types";
 
 // ── Профили рынков ──
 export const MARKET_PROFILES: Record<string, {
@@ -278,7 +279,7 @@ export function resonanceTrendsPrompt(market: string): string {
   return `Analyze current B2B resonance trends for ${market}. Return strict JSON with a trends array. Date: ${today}.`;
 }
 
-export function resonanceGeneratePrompt(market: string, trend: LegacyResonanceTrend): string {
+export function resonanceGeneratePrompt(market: string, trend: ResonanceTrend): string {
   return `Create B2B copy for ${market} using this trend: ${JSON.stringify(trend)}. Return strict JSON with headline, body, and cta keys.`;
 }
 
